@@ -129,7 +129,7 @@ export const DashboardPage = () => {
       type: 'truck',
       id: s.tracking_number,
       cargo: s.cargo_type,
-      driver: s.assigned_driver_name || 'Rajesh Jamatia',
+      driver: s.assigned_driver_name || 'Karthikeyan S',
       status: s.status,
       destination: s.destination?.name || 'Tawang District Hospital',
       eta: '4:30 PM',

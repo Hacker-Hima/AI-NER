@@ -170,7 +170,8 @@ export const EmergencyPage = () => {
                 title: `${b.code} - ${b.blockType}`,
                 category: 'LANDSLIDE',
                 severity: 'CRITICAL',
-                location: { coordinates: [92.6 + i * 0.3, 26.8 + i * 0.2] }
+                lat: 26.8 + i * 0.2,
+                lng: 92.6 + i * 0.3,
               }))}
               height="420px"
             />

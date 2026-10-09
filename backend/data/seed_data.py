@@ -26,7 +26,7 @@ def seed_database():
     print("1. Seeding test users with password '123'...")
     users = [
         {
-            "full_name": "Tenzing Norbu",
+            "full_name": "Muthu Kumar A",
             "email": "admin@ner.gov.in",
             "hashed_password": get_hash("123"),
             "role": "admin",
@@ -35,7 +35,7 @@ def seed_database():
             "created_at": now
         },
         {
-            "full_name": "Ananya Sharma",
+            "full_name": "Hima Dharshini A",
             "email": "coordinator@ner.gov.in",
             "hashed_password": get_hash("123"),
             "role": "logistics_coordinator",
@@ -44,7 +44,7 @@ def seed_database():
             "created_at": now
         },
         {
-            "full_name": "Rajesh Jamatia",
+            "full_name": "Karthikeyan S",
             "email": "driver@ner.gov.in",
             "hashed_password": get_hash("123"),
             "role": "field_driver",
@@ -53,7 +53,7 @@ def seed_database():
             "created_at": now
         },
         {
-            "full_name": "Lalthan Pachuau",
+            "full_name": "Samuel Raj R",
             "email": "observer@ner.gov.in",
             "hashed_password": get_hash("123"),
             "role": "regional_observer",
@@ -223,7 +223,7 @@ def seed_database():
                 "lng": 92.6512
             },
             "assigned_driver_id": driver_id,
-            "assigned_driver_name": "Rajesh Jamatia",
+            "assigned_driver_name": "Karthikeyan S",
             "risk_score": 0.74,
             "risk_level": "CRITICAL",
             "estimated_delay_mins": 140,
@@ -253,7 +253,7 @@ def seed_database():
                 "lng": 93.1250
             },
             "assigned_driver_id": driver_id,
-            "assigned_driver_name": "Rajesh Jamatia",
+            "assigned_driver_name": "Karthikeyan S",
             "risk_score": 0.32,
             "risk_level": "MODERATE",
             "estimated_delay_mins": 35,

@@ -96,7 +96,7 @@ export const DriverPage = () => {
               Mountain Convoy Cockpit
             </div>
             <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#0f172a', fontFamily: 'Space Grotesk, sans-serif' }}>
-              Pilot: {user?.full_name || 'Rajesh Jamatia'}
+              Pilot: {user?.full_name || 'Karthikeyan S'}
             </h2>
           </div>
         </div>
@@ -177,7 +177,7 @@ export const DriverPage = () => {
               Critical Vaccines & ICU Meds (3.5T)
             </h3>
             <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '18px' }}>
-              Guwahati Central Depot $\to$ Tawang District Hospital (Arunachal Pradesh)
+              Guwahati Central Depot → Tawang District Hospital (Arunachal Pradesh)
             </p>
 
             {/* Delivery Progress Bar */}
@@ -238,7 +238,8 @@ export const DriverPage = () => {
                 title: 'Active Mudslide on Sela Lake Road',
                 category: 'LANDSLIDE',
                 severity: 'CRITICAL',
-                location: { coordinates: [92.1, 27.45] }
+                lat: 27.45,
+                lng: 92.1,
               }]}
               center={[27.0125, 92.6450]}
               zoom={8}

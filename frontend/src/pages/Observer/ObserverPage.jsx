@@ -27,9 +27,9 @@ const DISTRICT_ACCESSIBILITY = [
 ];
 
 const PENDING_REPORTS = [
-  { id: 'REP-101', title: 'Mudslide blocking NH-13 Km 84', location: 'Sela Lake Approach', reportedBy: 'Truck Pilot (AS-01-HC-4821)', time: '18m ago', verifications: 2, severity: 'CRITICAL' },
-  { id: 'REP-102', title: 'Water runoff and debris near Sonapur Tunnel', location: 'NH-6 East Jaintia Hills', reportedBy: 'Local Village Council', time: '42m ago', verifications: 1, severity: 'MODERATE' },
-  { id: 'REP-103', title: 'Tree branch fallen on high-tension wire', location: 'Shillong Bypass Km 12', reportedBy: 'PWD Patrol Unit', time: '1h ago', verifications: 3, severity: 'LOW' },
+  { id: 'REP-101', title: 'Mudslide blocking NH-13 Km 84', location: 'Sela Lake Approach', reportedBy: 'Karthikeyan S (AS-01-HC-4821)', time: '18m ago', verifications: 2, severity: 'CRITICAL' },
+  { id: 'REP-102', title: 'Water runoff and debris near Sonapur Tunnel', location: 'NH-6 East Jaintia Hills', reportedBy: 'Dinesh Kumar T', time: '42m ago', verifications: 1, severity: 'MODERATE' },
+  { id: 'REP-103', title: 'Tree branch fallen on high-tension wire', location: 'Shillong Bypass Km 12', reportedBy: 'Arun Prasath K (PWD Unit)', time: '1h ago', verifications: 3, severity: 'LOW' },
 ];
 
 export const ObserverPage = () => {
