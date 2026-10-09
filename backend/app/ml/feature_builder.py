@@ -28,14 +28,15 @@ def predict_segment_risk(
             "contributing_factors": ["Heuristic assessment (offline fallback)"]
         }
         
-    features = np.array([[
-        precipitation_24h_mm,
-        precipitation_72h_accumulated_mm,
-        elevation_change_m,
-        slope_gradient,
-        road_vulnerability_index,
-        cargo_weight_tonnes
-    ]])
+    import pandas as pd
+    features = pd.DataFrame([{
+        "precipitation_24h_mm": precipitation_24h_mm,
+        "precipitation_72h_accumulated_mm": precipitation_72h_accumulated_mm,
+        "elevation_change_m": elevation_change_m,
+        "slope_gradient": slope_gradient,
+        "road_vulnerability_index": road_vulnerability_index,
+        "cargo_weight_tonnes": cargo_weight_tonnes
+    }])
     
     scaled_features = models.scaler.transform(features)
     
