@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
 class RiskPredictionRequest(BaseModel):
-    corridor_name: str
+    corridor_name: Optional[str] = "Custom Corridor"
     precipitation_24h_mm: float
     precipitation_72h_accumulated_mm: float
     elevation_change_m: float

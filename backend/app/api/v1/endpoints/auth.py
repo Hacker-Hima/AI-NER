@@ -54,11 +54,17 @@ async def login(credentials: UserLogin):
     if db is None:
         raise HTTPException(status_code=500, detail="Database connection unavailable")
         
-    user = await db.users.find_one({"email": credentials.email})
+    email_clean = credentials.email.strip().lower()
+    user = await db.users.find_one({
+        "$or": [
+            {"email": email_clean},
+            {"email": f"{email_clean}@ner.gov.in"}
+        ]
+    })
     if not user or not verify_password(credentials.password, user.get("hashed_password", "")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password."
+            detail="Incorrect username/email or password."
         )
         
     user_id = str(user["_id"])

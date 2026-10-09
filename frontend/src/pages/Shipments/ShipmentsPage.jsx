@@ -1,473 +1,447 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
-import { Badge } from '../../components/common/Badge';
 import { NERMap } from '../../components/map/NERMap';
-import { 
-  Truck, 
-  Plus, 
-  Play, 
-  Square, 
-  RotateCw, 
-  MapPin, 
-  ShieldCheck, 
-  AlertTriangle, 
-  CheckCircle, 
-  Navigation,
-  X 
+import { useAuth } from '../../context/AuthContext';
+import {
+  Truck, Plus, Play, Square, RotateCw, MapPin, ShieldCheck,
+  AlertTriangle, Navigation, X, CheckCircle, Clock, Package
 } from 'lucide-react';
 
 const NER_HUBS = [
-  { name: "Guwahati Central Depot (Assam)", lat: 26.1445, lng: 91.7362 },
-  { name: "Tawang District Hospital (Arunachal)", lat: 27.5861, lng: 91.8594 },
-  { name: "Silchar FCI Granary (Assam)", lat: 24.8333, lng: 92.7789 },
-  { name: "Imphal Relief Logistics Hub (Manipur)", lat: 24.8170, lng: 93.9368 },
-  { name: "Kohima Civil Supply Depot (Nagaland)", lat: 25.6751, lng: 94.1086 },
-  { name: "Dimapur Railway Freight Yard (Nagaland)", lat: 25.9062, lng: 93.7271 },
-  { name: "Shillong Health Department (Meghalaya)", lat: 25.5788, lng: 91.8933 },
-  { name: "Aizawl Emergency Supplies Store (Mizoram)", lat: 23.7271, lng: 92.7176 },
-  { name: "Agartala State Depot (Tripura)", lat: 23.8315, lng: 91.2868 },
-  { name: "Gangtok Hill Supply Center (Sikkim)", lat: 27.3389, lng: 88.6065 }
+  { name: 'Guwahati Central Depot (Assam)', lat: 26.1445, lng: 91.7362 },
+  { name: 'Tawang District Hospital (Arunachal)', lat: 27.5861, lng: 91.8594 },
+  { name: 'Silchar FCI Granary (Assam)', lat: 24.8333, lng: 92.7789 },
+  { name: 'Imphal Relief Logistics Hub (Manipur)', lat: 24.8170, lng: 93.9368 },
+  { name: 'Kohima Civil Supply Depot (Nagaland)', lat: 25.6751, lng: 94.1086 },
+  { name: 'Dimapur Railway Freight Yard (Nagaland)', lat: 25.9062, lng: 93.7271 },
+  { name: 'Shillong Health Department (Meghalaya)', lat: 25.5788, lng: 91.8933 },
+  { name: 'Aizawl Emergency Supplies (Mizoram)', lat: 23.7271, lng: 92.7176 },
+  { name: 'Agartala State Depot (Tripura)', lat: 23.8315, lng: 91.2868 },
+  { name: 'Gangtok Hill Supply Center (Sikkim)', lat: 27.3389, lng: 88.6065 },
 ];
 
+const PRIORITY_MAP = {
+  CRITICAL: { class: 'badge-rose', color: '#dc2626' },
+  HIGH:     { class: 'badge-amber', color: '#d97706' },
+  NORMAL:   { class: 'badge-blue', color: '#2563eb' },
+  LOW:      { class: 'badge-slate', color: '#64748b' },
+};
+const STATUS_MAP = {
+  IN_TRANSIT: { class: 'badge-blue', label: 'In Transit' },
+  REROUTED:   { class: 'badge-emerald', label: 'Rerouted' },
+  SCHEDULED:  { class: 'badge-slate', label: 'Scheduled' },
+  DELAYED:    { class: 'badge-amber', label: 'Delayed' },
+  DELIVERED:  { class: 'badge-emerald', label: 'Delivered' },
+};
+
 export const ShipmentsPage = () => {
+  const { user } = useAuth();
   const [shipments, setShipments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
-  const [selectedShipment, setSelectedShipment] = useState(null);
-  const [activeRoute, setActiveRoute] = useState(null);
-  
-  // Modal state
+  const [selected, setSelected] = useState(null);
+  const [activeRoutes, setActiveRoutes] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [simulatingId, setSimulatingId] = useState(null);
+  const [rerouting, setRerouting] = useState(false);
+  const [toast, setToast] = useState(null);
+  const simRef = useRef(null);
   const [form, setForm] = useState({
     cargo_type: 'Critical Vaccines & Medical Supplies',
     priority: 'CRITICAL',
     weight_tonnes: 3.5,
     originIndex: 0,
     destinationIndex: 1,
-    notes: 'Urgent mountain transit dispatch'
+    notes: 'Urgent mountain transit dispatch',
   });
 
-  // Telemetry Simulation State
-  const [simulatingId, setSimulatingId] = useState(null);
-  const [simInterval, setSimInterval] = useState(null);
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   const fetchShipments = async () => {
     try {
       setLoading(true);
       const res = await api.get('/shipments/');
       setShipments(res.data);
-      if (res.data.length > 0 && !selectedShipment) {
-        setSelectedShipment(res.data[0]);
-      }
+      if (res.data.length > 0 && !selected) setSelected(res.data[0]);
     } catch (err) {
-      console.error("Failed to load shipments:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchShipments();
-  }, []);
+  useEffect(() => { fetchShipments(); }, []);
 
-  // Fetch route when shipment selection changes
   useEffect(() => {
-    if (!selectedShipment) return;
+    if (!selected) return;
     const fetchRoute = async () => {
       try {
-        const res = await api.get(`/routes/shipment/${selectedShipment.id}`);
-        if (res.data && res.data.standard_route) {
-          setActiveRoute(res.data.standard_route);
+        const res = await api.get(`/routes/shipment/${selected.id}`);
+        if (res.data?.standard_route) {
+          const routes = [res.data.standard_route];
+          if (res.data.safe_alternative_route) routes.push(res.data.safe_alternative_route);
+          setActiveRoutes(routes);
         }
-      } catch (err) {
-        // Fallback synthetic route between origin and dest
-        const origin = selectedShipment.origin;
-        const dest = selectedShipment.destination;
-        if (origin && dest) {
-          setActiveRoute({
-            geometry: [[origin.lng, origin.lat], [dest.lng, dest.lat]],
-            distance_km: 240,
-            predicted_duration_mins: 320,
-            risk_level: selectedShipment.risk_level,
-            is_safe_alternative: selectedShipment.status === 'REROUTED'
-          });
+      } catch {
+        if (selected.origin && selected.destination) {
+          setActiveRoutes([{
+            geometry: [[selected.origin.lng, selected.origin.lat], [selected.destination.lng, selected.destination.lat]],
+            distance_km: 240, predicted_duration_mins: 320,
+            risk_level: selected.risk_level, is_safe_alternative: false
+          }]);
         }
       }
     };
     fetchRoute();
-  }, [selectedShipment]);
+  }, [selected]);
 
-  const handleCreateShipment = async (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
     try {
-      const originHub = NER_HUBS[form.originIndex];
-      const destHub = NER_HUBS[form.destinationIndex];
-
-      const payload = {
+      const origin = NER_HUBS[parseInt(form.originIndex)];
+      const dest = NER_HUBS[parseInt(form.destinationIndex)];
+      await api.post('/shipments/', {
         cargo_type: form.cargo_type,
         priority: form.priority,
         weight_tonnes: parseFloat(form.weight_tonnes),
-        origin: { name: originHub.name, lat: originHub.lat, lng: originHub.lng },
-        destination: { name: destHub.name, lat: destHub.lat, lng: destHub.lng },
-        notes: form.notes
-      };
-
-      await api.post('/shipments/', payload);
+        origin: { name: origin.name, lat: origin.lat, lng: origin.lng },
+        destination: { name: dest.name, lat: dest.lat, lng: dest.lng },
+        notes: form.notes,
+      });
       setIsModalOpen(false);
+      showToast('Shipment dispatched and ML risk calculated!', 'success');
       fetchShipments();
     } catch (err) {
-      alert("Failed to create shipment. Please verify input.");
+      showToast(err.response?.data?.detail || 'Failed to create shipment. Ensure you are logged in.', 'error');
     }
   };
 
-  // Start GPS Simulation
-  const toggleSimulation = (shipment) => {
-    if (simulatingId === shipment.id) {
-      // Stop
-      clearInterval(simInterval);
-      setSimInterval(null);
+  const handleSimulateGPS = async () => {
+    if (!selected) return;
+    if (simulatingId) {
+      clearInterval(simRef.current);
       setSimulatingId(null);
+      showToast('GPS simulation stopped', 'info');
       return;
     }
 
-    // Start simulation
-    setSimulatingId(shipment.id);
+    const origin = selected.origin;
+    const dest = selected.destination;
+    if (!origin || !dest) return;
+
+    const waypoints = [];
+    const steps = 12;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      waypoints.push({
+        lat: origin.lat + (dest.lat - origin.lat) * t + Math.sin(t * Math.PI) * 0.15,
+        lng: origin.lng + (dest.lng - origin.lng) * t,
+      });
+    }
+
+    setSimulatingId(selected.id);
+    showToast('GPS simulation started — tracking convoy movement...', 'info');
     let step = 0;
-    const totalSteps = 20;
-    const oLat = shipment.origin.lat;
-    const oLng = shipment.origin.lng;
-    const dLat = shipment.destination.lat;
-    const dLng = shipment.destination.lng;
 
-    const interval = setInterval(async () => {
-      step = (step + 1) % totalSteps;
-      const t = step / totalSteps;
-      const currentLat = oLat + (dLat - oLat) * t + Math.sin(t * Math.PI) * 0.05;
-      const currentLng = oLng + (dLng - oLng) * t;
-
-      try {
-        await api.post(`/shipments/${shipment.id}/telemetry`, {
-          lat: currentLat,
-          lng: currentLng
-        });
-
-        // Update local state smoothly
-        setShipments(prev => prev.map(s => {
-          if (s.id === shipment.id) {
-            return {
-              ...s,
-              status: 'IN_TRANSIT',
-              current_location: { name: `Live GPS Waypoint (Step ${step})`, lat: currentLat, lng: currentLng }
-            };
-          }
-          return s;
-        }));
-
-        if (selectedShipment?.id === shipment.id) {
-          setSelectedShipment(prev => ({
-            ...prev,
-            status: 'IN_TRANSIT',
-            current_location: { name: `Live GPS Waypoint (Step ${step})`, lat: currentLat, lng: currentLng }
-          }));
-        }
-      } catch (err) {
-        console.error("Telemetry push failed:", err);
+    simRef.current = setInterval(async () => {
+      if (step >= waypoints.length) {
+        clearInterval(simRef.current);
+        setSimulatingId(null);
+        showToast('Convoy reached destination!', 'success');
+        return;
       }
-    }, 2500);
-
-    setSimInterval(interval);
+      const wp = waypoints[step];
+      try {
+        await api.post(`/shipments/${selected.id}/telemetry`, { lat: wp.lat, lng: wp.lng });
+        setSelected(prev => prev ? {
+          ...prev,
+          current_location: { name: 'Live GPS Position', lat: wp.lat, lng: wp.lng }
+        } : prev);
+        setShipments(prev => prev.map(s => s.id === selected.id
+          ? { ...s, current_location: { name: 'Live GPS', lat: wp.lat, lng: wp.lng } }
+          : s
+        ));
+      } catch { clearInterval(simRef.current); setSimulatingId(null); }
+      step++;
+    }, 2000);
   };
 
-  const handleReroute = async (shipmentId) => {
+  const handleReroute = async () => {
+    if (!selected) return;
+    setRerouting(true);
     try {
-      await api.post(`/shipments/${shipmentId}/reroute`);
-      fetchShipments();
-      alert("Shipment successfully diverted to verified Safe Alternative Route bypassing mountain hazard.");
-    } catch (err) {
-      alert("Reroute request failed.");
+      const res = await api.post(`/shipments/${selected.id}/reroute`);
+      setSelected(res.data);
+      setShipments(prev => prev.map(s => s.id === res.data.id ? res.data : s));
+      showToast('Convoy rerouted to safe alternative path!', 'success');
+      const routeRes = await api.get(`/routes/shipment/${res.data.id}`);
+      if (routeRes.data?.safe_alternative_route) {
+        setActiveRoutes([routeRes.data.safe_alternative_route]);
+      }
+    } catch {
+      showToast('Reroute failed. Please try again.', 'error');
+    } finally {
+      setRerouting(false);
     }
   };
 
-  const filteredShipments = shipments.filter(s => {
-    if (filter === 'ALL') return true;
-    if (filter === 'CRITICAL') return s.priority === 'CRITICAL' || s.risk_level === 'CRITICAL';
-    if (filter === 'IN_TRANSIT') return s.status === 'IN_TRANSIT';
-    if (filter === 'DELIVERED') return s.status === 'DELIVERED';
-    return true;
-  });
+  const canDispatch = ['admin', 'logistics_coordinator'].includes(user?.role);
+  const filteredShipments = filter === 'ALL' ? shipments : shipments.filter(s => s.status === filter || s.priority === filter);
 
   return (
-    <div className="space-y-6">
-      
-      {/* Top Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Toast Notification */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999 }}>
+          <div className={`toast toast-${toast.type}`}>{toast.msg}</div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <Truck className="w-6 h-6 text-emerald-400" />
-            Essential Supply Shipments & Convoys
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Manage critical cargo, track moving trucks along Himalayan passes, and execute dynamic hazard rerouting.
-          </p>
+          <h2 className="section-title" style={{ fontSize: 20, color: '#0f172a' }}>Essential Supply Shipments</h2>
+          <p className="section-subtitle">GPS-tracked convoy management — medicines, food, fuel & construction materials</p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold shadow-lg shadow-emerald-600/20 transition"
-        >
-          <Plus className="w-4 h-4" />
-          Dispatch New Supply Convoy
-        </button>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-        {['ALL', 'CRITICAL', 'IN_TRANSIT', 'DELIVERED'].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setFilter(tab)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-              filter === tab
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {tab.replace('_', ' ')}
-          </button>
-        ))}
-      </div>
-
-      {/* Main Grid: Shipments List (Left) + Selected Shipment Live Map (Right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Shipment Cards List (5 cols) */}
-        <div className="lg:col-span-5 space-y-3 max-h-[700px] overflow-y-auto pr-1">
-          {filteredShipments.map((s) => {
-            const isSelected = selectedShipment?.id === s.id;
-            const isCrit = s.priority === 'CRITICAL' || s.risk_level === 'CRITICAL';
-            const isSimulating = simulatingId === s.id;
-
-            return (
-              <div
-                key={s.id}
-                onClick={() => setSelectedShipment(s)}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-slate-900 border-emerald-500/60 shadow-lg shadow-emerald-500/5'
-                    : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-slate-100">{s.tracking_number}</span>
-                      <Badge variant={isCrit ? 'danger' : 'info'}>{s.priority}</Badge>
-                    </div>
-                    <div className="text-xs text-slate-300 font-medium mt-1">{s.cargo_type} ({s.weight_tonnes} T)</div>
-                  </div>
-                  <Badge variant={s.status === 'IN_TRANSIT' ? 'success' : s.status === 'DELIVERED' ? 'default' : 'warning'}>
-                    {s.status}
-                  </Badge>
-                </div>
-
-                <div className="mt-3 text-xs text-slate-400 space-y-1">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
-                    <span>From: {s.origin.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    <span>To: {s.destination.name}</span>
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-slate-500">AI Risk: </span>
-                    <span className={`font-semibold ${isCrit ? 'text-rose-400' : 'text-emerald-400'}`}>
-                      {Math.round(s.risk_score * 100)}% ({s.risk_level})
-                    </span>
-                  </div>
-
-                  {/* Quick Action Buttons */}
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    {s.status !== 'DELIVERED' && (
-                      <button
-                        onClick={() => toggleSimulation(s)}
-                        className={`px-2.5 py-1 rounded text-[11px] font-semibold flex items-center gap-1 transition ${
-                          isSimulating
-                            ? 'bg-rose-600 text-white animate-pulse'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                        }`}
-                        title="Simulate GPS Coordinates Playback"
-                      >
-                        {isSimulating ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                        {isSimulating ? 'Stop GPS' : 'Simulate GPS'}
-                      </button>
-                    )}
-                    {s.risk_level === 'CRITICAL' && s.status !== 'REROUTED' && (
-                      <button
-                        onClick={() => handleReroute(s.id)}
-                        className="px-2.5 py-1 rounded text-[11px] font-semibold bg-amber-600/30 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 transition"
-                      >
-                        Reroute
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Selected Shipment Details & Map Tracker (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
-          {selectedShipment ? (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-100">{selectedShipment.tracking_number}</h2>
-                    <Badge variant={selectedShipment.risk_level === 'CRITICAL' ? 'danger' : 'success'}>
-                      {selectedShipment.status}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-slate-400">Driver: {selectedShipment.assigned_driver_name}</p>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-slate-400">AI Expected Delay</div>
-                  <div className="text-sm font-bold text-amber-400">+{selectedShipment.estimated_delay_mins} mins</div>
-                </div>
-              </div>
-
-              {/* Map tracking the selected shipment */}
-              <NERMap
-                shipments={[selectedShipment]}
-                routes={activeRoute ? [activeRoute] : []}
-                selectedShipment={selectedShipment}
-                height="400px"
-              />
-
-              {/* Notes & Risk Guidance */}
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-                <div className="font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                  Corridor Intelligence Notes:
-                </div>
-                <p className="text-slate-400">{selectedShipment.notes || "No special mountain transit advisories for this corridor."}</p>
-              </div>
-            </div>
-          ) : (
-            <div className="p-12 text-center text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800">
-              Select a shipment on the left to inspect its live GIS trajectory.
-            </div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {/* Filter tabs */}
+          <div className="tab-bar">
+            {['ALL', 'IN_TRANSIT', 'CRITICAL', 'REROUTED', 'SCHEDULED'].map(f => (
+              <button key={f} className={`tab-item ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)} style={{ fontSize: 11.5 }}>
+                {f.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+          {canDispatch && (
+            <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+              <Plus size={15} /> Dispatch
+            </button>
           )}
         </div>
-
       </div>
 
-      {/* Modal: Dispatch New Consignment */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2 mb-4">
-              <Truck className="w-5 h-5 text-emerald-400" />
-              Dispatch New Essential Supply Convoy
-            </h2>
+      {/* Main Layout */}
+      <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 20 }}>
+        {/* Shipments List */}
+        <div className="glass-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc' }}>
+            <Package size={16} color="#2563eb" />
+            <span style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>Convoys ({filteredShipments.length})</span>
+          </div>
+          <div className="scroll-zone" style={{ flex: 1, maxHeight: 540 }}>
+            {loading ? (
+              <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[...Array(4)].map((_, i) => <div key={i} className="skeleton" style={{ height: 85, borderRadius: 10 }} />)}
+              </div>
+            ) : filteredShipments.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+                No shipments found
+              </div>
+            ) : filteredShipments.map(s => {
+              const isActive = selected?.id === s.id;
+              const pm = PRIORITY_MAP[s.priority] || PRIORITY_MAP.NORMAL;
+              const sm = STATUS_MAP[s.status] || STATUS_MAP.SCHEDULED;
+              return (
+                <div key={s.id}
+                  onClick={() => setSelected(s)}
+                  style={{
+                    padding: '14px 18px',
+                    borderBottom: '1px solid #f1f5f9',
+                    cursor: 'pointer',
+                    background: isActive ? '#eff6ff' : '#ffffff',
+                    borderLeft: `3px solid ${isActive ? '#2563eb' : 'transparent'}`,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5, color: isActive ? '#1d4ed8' : '#0f172a' }}>
+                      {s.tracking_number}
+                    </div>
+                    <span className={`badge ${pm.class}`} style={{ fontSize: 9.5 }}>{s.priority}</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: '#475569', marginBottom: 6 }}>{s.cargo_type}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className={`badge ${sm.class}`} style={{ fontSize: 9.5 }}>{sm.label}</span>
+                    <span style={{
+                      fontSize: 11.5, fontWeight: 700,
+                      color: s.risk_level === 'CRITICAL' ? '#dc2626' : s.risk_level === 'MODERATE' ? '#d97706' : '#059669'
+                    }}>
+                      {Math.round(s.risk_score * 100)}% Risk
+                    </span>
+                  </div>
+                  <div className="risk-bar" style={{ marginTop: 8 }}>
+                    <div className="risk-bar-fill" style={{
+                      width: `${Math.round(s.risk_score * 100)}%`,
+                      background: s.risk_level === 'CRITICAL' ? '#dc2626' : s.risk_level === 'MODERATE' ? '#d97706' : '#059669'
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
-            <form onSubmit={handleCreateShipment} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Cargo Type</label>
-                <input
-                  type="text"
-                  required
-                  value={form.cargo_type}
-                  onChange={e => setForm({ ...form, cargo_type: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
+        {/* Detail + Map Panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {selected && (
+            <div className="glass-card" style={{ padding: 22 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                    <h3 style={{ fontSize: 19, fontWeight: 800, color: '#0f172a' }}>{selected.tracking_number}</h3>
+                    <span className={`badge ${PRIORITY_MAP[selected.priority]?.class}`}>{selected.priority}</span>
+                    <span className={`badge ${STATUS_MAP[selected.status]?.class}`}>{selected.status?.replace('_', ' ')}</span>
+                  </div>
+                  <div style={{ fontSize: 13.5, color: '#475569' }}>
+                    {selected.cargo_type} — {selected.weight_tonnes}T
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={handleSimulateGPS}
+                    className={simulatingId ? 'btn-amber' : 'btn-emerald'}
+                    disabled={selected.status === 'DELIVERED'}
+                    style={{ fontSize: 12.5 }}
+                  >
+                    {simulatingId ? <Square size={13} /> : <Play size={13} />}
+                    {simulatingId ? 'Stop GPS Sim' : 'Simulate GPS'}
+                  </button>
+                  {(selected.risk_level === 'CRITICAL' || selected.risk_level === 'MODERATE') && canDispatch && (
+                    <button
+                      onClick={handleReroute}
+                      className="btn-rose"
+                      disabled={rerouting || selected.status === 'REROUTED'}
+                      style={{ fontSize: 12.5 }}
+                    >
+                      <RotateCw size={13} style={{ animation: rerouting ? 'spin 1s linear infinite' : 'none' }} />
+                      {rerouting ? 'Rerouting...' : 'Reroute to Safe Path'}
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* Info Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+                {[
+                  { label: 'Origin', value: selected.origin?.name, icon: '📍' },
+                  { label: 'Destination', value: selected.destination?.name, icon: '🏁' },
+                  { label: 'Current Location', value: selected.current_location?.name, icon: '📡' },
+                  { label: 'AI Risk Score', value: `${Math.round(selected.risk_score * 100)}% — ${selected.risk_level}`, icon: '🤖',
+                    color: selected.risk_level === 'CRITICAL' ? '#dc2626' : selected.risk_level === 'MODERATE' ? '#d97706' : '#059669' },
+                  { label: 'Expected Delay', value: `+${selected.estimated_delay_mins} mins`, icon: '⏱️' },
+                  { label: 'Driver', value: selected.assigned_driver_name, icon: '👤' },
+                ].map(item => (
+                  <div key={item.label} style={{
+                    padding: '11px 14px', borderRadius: 10,
+                    background: '#f8fafc', border: '1px solid #e2e8f0',
+                  }}>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      {item.icon} {item.label}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: item.color || '#0f172a' }}>
+                      {item.value || '—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {selected.notes && (
+                <div style={{
+                  padding: '11px 16px', borderRadius: 10,
+                  background: '#fffbeb', border: '1px solid #fde68a',
+                  fontSize: 12.5, color: '#92400e', fontWeight: 500
+                }}>
+                  ⚠️ {selected.notes}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Map */}
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
+            <NERMap
+              shipments={shipments}
+              routes={activeRoutes}
+              selectedShipment={selected}
+              incidents={[]}
+              height="360px"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Create Shipment Modal */}
+      {isModalOpen && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setIsModalOpen(false)}>
+          <div className="modal-box">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', color: '#0f172a' }}>
+                Dispatch New Convoy
+              </h3>
+              <button onClick={() => setIsModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label className="form-label">Cargo Type</label>
+                <input className="form-input" value={form.cargo_type}
+                  onChange={e => setForm(p => ({ ...p, cargo_type: e.target.value }))} required />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Priority</label>
-                  <select
-                    value={form.priority}
-                    onChange={e => setForm({ ...form, priority: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                  >
+                  <label className="form-label">Priority</label>
+                  <select className="form-select" value={form.priority}
+                    onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>
                     <option value="CRITICAL">CRITICAL</option>
                     <option value="HIGH">HIGH</option>
                     <option value="NORMAL">NORMAL</option>
+                    <option value="LOW">LOW</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Weight (Tonnes)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    max="35"
+                  <label className="form-label">Weight (Tonnes)</label>
+                  <input type="number" step="0.1" min="0.5" max="25" className="form-input"
                     value={form.weight_tonnes}
-                    onChange={e => setForm({ ...form, weight_tonnes: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                  />
+                    onChange={e => setForm(p => ({ ...p, weight_tonnes: e.target.value }))} />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Origin Logistics Depot</label>
-                <select
-                  value={form.originIndex}
-                  onChange={e => setForm({ ...form, originIndex: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                >
-                  {NER_HUBS.map((hub, idx) => (
-                    <option key={hub.name} value={idx}>{hub.name}</option>
-                  ))}
+                <label className="form-label">Origin Depot</label>
+                <select className="form-select" value={form.originIndex}
+                  onChange={e => setForm(p => ({ ...p, originIndex: e.target.value }))}>
+                  {NER_HUBS.map((h, i) => <option key={i} value={i}>{h.name}</option>)}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Destination Node</label>
-                <select
-                  value={form.destinationIndex}
-                  onChange={e => setForm({ ...form, destinationIndex: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                >
-                  {NER_HUBS.map((hub, idx) => (
-                    <option key={hub.name} value={idx}>{hub.name}</option>
-                  ))}
+                <label className="form-label">Destination</label>
+                <select className="form-select" value={form.destinationIndex}
+                  onChange={e => setForm(p => ({ ...p, destinationIndex: e.target.value }))}>
+                  {NER_HUBS.map((h, i) => <option key={i} value={i}>{h.name}</option>)}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Transit Instructions</label>
-                <textarea
-                  rows="2"
-                  value={form.notes}
-                  onChange={e => setForm({ ...form, notes: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                ></textarea>
+                <label className="form-label">Notes / Special Instructions</label>
+                <textarea className="form-input" rows={3} value={form.notes}
+                  onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
               </div>
 
-              <div className="pt-2 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium hover:bg-slate-700 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/20"
-                >
-                  Confirm Dispatch
+              <div style={{ display: 'flex', gap: 10, paddingTop: 6 }}>
+                <button type="button" className="btn-ghost" style={{ flex: 1, justifyContent: 'center' }}
+                  onClick={() => setIsModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                  <Truck size={14} /> Dispatch & Calculate Risk
                 </button>
               </div>
             </form>
@@ -475,6 +449,7 @@ export const ShipmentsPage = () => {
         </div>
       )}
 
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };

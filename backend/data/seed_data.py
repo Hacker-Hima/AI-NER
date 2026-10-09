@@ -23,12 +23,12 @@ def seed_database():
     now = datetime.now(timezone.utc)
     
     # 1. Users
-    print("1. Seeding test users across 4 SIH roles...")
+    print("1. Seeding test users with password '123'...")
     users = [
         {
             "full_name": "Tenzing Norbu",
             "email": "admin@ner.gov.in",
-            "hashed_password": get_hash("admin123"),
+            "hashed_password": get_hash("123"),
             "role": "admin",
             "phone": "+919436012345",
             "region": "Arunachal Pradesh",
@@ -37,7 +37,7 @@ def seed_database():
         {
             "full_name": "Ananya Sharma",
             "email": "coordinator@ner.gov.in",
-            "hashed_password": get_hash("coord123"),
+            "hashed_password": get_hash("123"),
             "role": "logistics_coordinator",
             "phone": "+919435098765",
             "region": "Assam",
@@ -46,7 +46,7 @@ def seed_database():
         {
             "full_name": "Rajesh Jamatia",
             "email": "driver@ner.gov.in",
-            "hashed_password": get_hash("driver123"),
+            "hashed_password": get_hash("123"),
             "role": "field_driver",
             "phone": "+919862011223",
             "region": "Tripura",
@@ -55,7 +55,7 @@ def seed_database():
         {
             "full_name": "Lalthan Pachuau",
             "email": "observer@ner.gov.in",
-            "hashed_password": get_hash("obs123"),
+            "hashed_password": get_hash("123"),
             "role": "regional_observer",
             "phone": "+919863044556",
             "region": "Mizoram",

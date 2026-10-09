@@ -1,53 +1,63 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { NERMap } from '../../components/map/NERMap';
-import { Badge } from '../../components/common/Badge';
 import { useAuth } from '../../context/AuthContext';
-import { 
-  AlertTriangle, 
-  Plus, 
-  CheckCircle, 
-  MapPin, 
-  ThumbsUp, 
-  ShieldAlert, 
-  X, 
-  Clock 
-} from 'lucide-react';
+import { AlertTriangle, Plus, CheckCircle, Shield, MapPin, X, ThumbsUp } from 'lucide-react';
+
+const CATEGORY_MAP = {
+  LANDSLIDE:    { label: 'Landslide', icon: '⛰️', color: '#dc2626', bg: '#fef2f2' },
+  FLASH_FLOOD:  { label: 'Flash Flood', icon: '🌊', color: '#2563eb', bg: '#eff6ff' },
+  ROAD_DAMAGE:  { label: 'Road Damage', icon: '🔧', color: '#d97706', bg: '#fffbeb' },
+  TREE_FALL:    { label: 'Tree Fall', icon: '🌲', color: '#059669', bg: '#ecfdf5' },
+  BRIDGE_ISSUE: { label: 'Bridge Issue', icon: '🌉', color: '#7c3aed', bg: '#f5f3ff' },
+  OTHER:        { label: 'Other', icon: '⚠️', color: '#64748b', bg: '#f1f5f9' },
+};
 
 export const IncidentsPage = () => {
   const { user } = useAuth();
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  
+  const [filter, setFilter] = useState('ALL');
+  const [selected, setSelected] = useState(null);
+  const [isReporting, setIsReporting] = useState(false);
+  const [mapClickCoords, setMapClickCoords] = useState(null);
   const [form, setForm] = useState({
-    title: '',
-    category: 'LANDSLIDE',
-    severity: 'CRITICAL',
-    lat: 27.25,
-    lng: 92.40,
-    landmark: 'NH-13 Mountain Pass Km 42',
-    description: 'Boulders and slope debris covering road width.'
+    title: '', category: 'LANDSLIDE', severity: 'CRITICAL',
+    lat: '', lng: '', landmark: '', description: ''
   });
+  const [toast, setToast] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchIncidents = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get('/incidents/');
-      setIncidents(res.data);
-    } catch (err) {
-      console.error("Failed to load incidents:", err);
-    } finally {
-      setLoading(false);
-    }
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  useEffect(() => {
-    fetchIncidents();
-  }, []);
+  const fetchIncidents = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/incidents/');
+      setIncidents(res.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchIncidents(); }, []);
+
+  const handleMapClick = (coords) => {
+    if (!isReporting) return;
+    setMapClickCoords(coords);
+    setForm(p => ({ ...p, lat: coords.lat.toFixed(5), lng: coords.lng.toFixed(5) }));
+    showToast(`Coordinates pinned: ${coords.lat.toFixed(4)}°N, ${coords.lng.toFixed(4)}°E`, 'info');
+  };
 
   const handleReport = async (e) => {
     e.preventDefault();
+    if (!form.lat || !form.lng) {
+      showToast('Click on the map to set incident coordinates', 'error');
+      return;
+    }
+    setSubmitting(true);
     try {
       await api.post('/incidents/', {
         title: form.title,
@@ -56,273 +66,261 @@ export const IncidentsPage = () => {
         lat: parseFloat(form.lat),
         lng: parseFloat(form.lng),
         landmark: form.landmark,
-        description: form.description
+        description: form.description,
       });
-      setIsModalOpen(false);
+      showToast('Incident reported and logged!', 'success');
+      setIsReporting(false);
+      setMapClickCoords(null);
+      setForm({ title: '', category: 'LANDSLIDE', severity: 'CRITICAL', lat: '', lng: '', landmark: '', description: '' });
       fetchIncidents();
-      alert("Disruption reported successfully. Verified alerts will automatically warn active logistics convoys.");
     } catch (err) {
-      alert("Failed to report disruption.");
-    }
+      showToast(err.response?.data?.detail || 'Failed to report incident', 'error');
+    } finally { setSubmitting(false); }
   };
 
   const handleVerify = async (id) => {
     try {
       await api.patch(`/incidents/${id}/verify`);
+      showToast('Incident verified — trust score increased!', 'success');
       fetchIncidents();
-    } catch (err) {
-      console.error("Verification failed:", err);
-    }
+    } catch { showToast('Verification failed', 'error'); }
   };
 
   const handleResolve = async (id) => {
     try {
       await api.patch(`/incidents/${id}/resolve`);
+      showToast('Incident marked as resolved', 'success');
       fetchIncidents();
-    } catch (err) {
-      console.error("Resolution failed:", err);
-    }
+    } catch { showToast('Could not resolve incident', 'error'); }
   };
 
-  const handleMapClick = (coords) => {
-    setForm(prev => ({
-      ...prev,
-      lat: parseFloat(coords.lat.toFixed(4)),
-      lng: parseFloat(coords.lng.toFixed(4))
-    }));
+  const canReport = ['admin', 'logistics_coordinator', 'field_driver'].includes(user?.role);
+  const canResolve = ['admin'].includes(user?.role);
+
+  const filtered = filter === 'ALL' ? incidents : incidents.filter(i =>
+    i.status === filter || i.severity === filter || i.category === filter
+  );
+
+  const stats = {
+    total: incidents.length,
+    critical: incidents.filter(i => i.severity === 'CRITICAL' && i.status !== 'RESOLVED').length,
+    verified: incidents.filter(i => i.status === 'VERIFIED').length,
+    resolved: incidents.filter(i => i.status === 'RESOLVED').length,
   };
 
   return (
-    <div className="space-y-6">
-      
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <AlertTriangle className="w-6 h-6 text-rose-500" />
-            Road Disruption & Hazard Intelligence Board
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Crowdsourced and official monitoring of mountain landslides, flash floods, and bridge damages across the 8 NER states.
-          </p>
-        </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold shadow-lg shadow-rose-600/20 transition"
-        >
-          <Plus className="w-4 h-4" />
-          Report Road Disruption
-        </button>
-      </div>
-
-      {/* Map & List Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Incident Cards (6 cols) */}
-        <div className="lg:col-span-6 space-y-3 max-h-[680px] overflow-y-auto pr-1">
-          {incidents.map((inc) => {
-            const isCrit = inc.severity === 'CRITICAL';
-            const isResolved = inc.status === 'RESOLVED';
-
-            return (
-              <div
-                key={inc.id}
-                className={`p-4 rounded-xl border transition ${
-                  isResolved
-                    ? 'bg-slate-900/30 border-slate-800 opacity-60'
-                    : isCrit
-                    ? 'bg-slate-900/80 border-rose-900/50 hover:border-rose-700/60 shadow-md shadow-rose-900/10'
-                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-slate-100">{inc.title}</span>
-                      <Badge variant={isCrit ? 'danger' : 'warning'}>{inc.severity}</Badge>
-                    </div>
-                    <div className="text-xs text-slate-300 font-medium mt-1">{inc.landmark}</div>
-                  </div>
-                  <Badge variant={isResolved ? 'default' : inc.status === 'VERIFIED' ? 'success' : 'warning'}>
-                    {inc.status}
-                  </Badge>
-                </div>
-
-                <p className="text-xs text-slate-400 mt-2">{inc.description}</p>
-
-                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <div className="text-slate-400 flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{inc.lat.toFixed(3)}°N, {inc.lng.toFixed(3)}°E</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {!isResolved && (
-                      <button
-                        onClick={() => handleVerify(inc.id)}
-                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium flex items-center gap-1 transition"
-                        title="Confirm hazard is active"
-                      >
-                        <ThumbsUp className="w-3 h-3 text-emerald-400" />
-                        Verify ({inc.verification_count || 1})
-                      </button>
-                    )}
-                    {!isResolved && (user?.role === 'admin' || user?.role === 'logistics_coordinator') && (
-                      <button
-                        onClick={() => handleResolve(inc.id)}
-                        className="px-2.5 py-1 rounded bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-medium transition"
-                      >
-                        Mark Cleared
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Live Hazard Map (6 cols) */}
-        <div className="lg:col-span-6 space-y-3">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Visualizing Active Road Hazards & Landslides</span>
-            <span className="text-rose-400">Click anywhere on the map to set report coordinates</span>
-          </div>
-          <NERMap
-            incidents={incidents}
-            onMapClick={handleMapClick}
-            height="550px"
-          />
-        </div>
-
-      </div>
-
-      {/* Modal: Report Road Disruption */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2 mb-4">
-              <AlertTriangle className="w-5 h-5 text-rose-500" />
-              Report Road Hazard / Landslide
-            </h2>
-
-            <form onSubmit={handleReport} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Disruption Headline</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g., Major Landslide blocking both lanes on NH-29"
-                  value={form.title}
-                  onChange={e => setForm({ ...form, title: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Hazard Category</label>
-                  <select
-                    value={form.category}
-                    onChange={e => setForm({ ...form, category: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-rose-500"
-                  >
-                    <option value="LANDSLIDE">LANDSLIDE</option>
-                    <option value="FLASH_FLOOD">FLASH FLOOD</option>
-                    <option value="ROAD_DAMAGE">ROAD DAMAGE / CAVITATION</option>
-                    <option value="SNOW_BLOCKAGE">SNOW BLOCKAGE</option>
-                    <option value="PROTEST">CIVIL BLOCKADE</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Severity Tier</label>
-                  <select
-                    value={form.severity}
-                    onChange={e => setForm({ ...form, severity: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-rose-500"
-                  >
-                    <option value="CRITICAL">CRITICAL (Total Block)</option>
-                    <option value="MODERATE">MODERATE (Single Lane)</option>
-                    <option value="MINOR">MINOR (Slow Traffic)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Latitude (°N)</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    required
-                    value={form.lat}
-                    onChange={e => setForm({ ...form, lat: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Longitude (°E)</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    required
-                    value={form.lng}
-                    onChange={e => setForm({ ...form, lng: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Highway / Kilometer Landmark</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g., NH-6 Km 82, Sonapur Tunnel approach"
-                  value={form.landmark}
-                  onChange={e => setForm({ ...form, landmark: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Observed Road Condition</label>
-                <textarea
-                  rows="2"
-                  required
-                  placeholder="Describe obstruction width, weather conditions, clearance efforts..."
-                  value={form.description}
-                  onChange={e => setForm({ ...form, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-rose-500"
-                ></textarea>
-              </div>
-
-              <div className="pt-2 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium hover:bg-slate-700 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-medium hover:bg-rose-500 transition shadow-lg shadow-rose-600/20"
-                >
-                  Submit Disruption Report
-                </button>
-              </div>
-            </form>
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Toast */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999 }}>
+          <div className={`toast toast-${toast.type}`}>{toast.msg}</div>
         </div>
       )}
 
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h2 className="section-title" style={{ fontSize: 20, color: '#0f172a' }}>Disruption Board</h2>
+          <p className="section-subtitle">Crowdsourced road hazard reports — landslides, floods, bridge damage</p>
+        </div>
+        {canReport && (
+          <button
+            className={isReporting ? 'btn-amber' : 'btn-rose'}
+            onClick={() => setIsReporting(!isReporting)}
+          >
+            {isReporting ? <X size={15} /> : <Plus size={15} />}
+            {isReporting ? 'Cancel Reporting' : 'Report Disruption'}
+          </button>
+        )}
+      </div>
+
+      {/* Stat Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        {[
+          { label: 'Total Reports', value: stats.total, color: '#2563eb', bg: '#eff6ff', icon: '📋' },
+          { label: 'Critical Active', value: stats.critical, color: '#dc2626', bg: '#fef2f2', icon: '🚨' },
+          { label: 'Verified', value: stats.verified, color: '#d97706', bg: '#fffbeb', icon: '✅' },
+          { label: 'Resolved', value: stats.resolved, color: '#059669', bg: '#ecfdf5', icon: '🟢' },
+        ].map(s => (
+          <div key={s.label} style={{
+            padding: '16px 20px', borderRadius: 14, background: s.bg, border: `1px solid ${s.color}25`,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+          }}>
+            <div style={{ fontSize: 22 }}>{s.icon}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: s.color, lineHeight: 1.2, marginTop: 8 }}>{s.value}</div>
+            <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3, fontWeight: 600 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Main Layout */}
+      <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 20, alignItems: 'start' }}>
+        {/* Left: List + Report Form */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Reporting Form */}
+          {isReporting && (
+            <div className="glass-card" style={{ padding: 22, borderColor: '#fca5a5' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: '#dc2626', fontWeight: 800, fontSize: 15 }}>
+                <AlertTriangle size={18} /> Report Road Disruption
+              </div>
+              <div style={{
+                padding: '11px 14px', borderRadius: 10, marginBottom: 14,
+                background: '#eff6ff', border: '1px solid #bfdbfe',
+                fontSize: 12.5, color: '#1d4ed8',
+              }}>
+                📍 Click anywhere on the map to set incident coordinates
+                {form.lat && form.lng && (
+                  <div style={{ fontWeight: 700, marginTop: 4 }}>
+                    Pinned: {parseFloat(form.lat).toFixed(3)}°N, {parseFloat(form.lng).toFixed(3)}°E
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleReport} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label className="form-label">Incident Title</label>
+                  <input className="form-input" placeholder="e.g. Landslide at Sela Pass" required
+                    value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label className="form-label">Category</label>
+                    <select className="form-select" value={form.category}
+                      onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
+                      {Object.keys(CATEGORY_MAP).map(k => <option key={k} value={k}>{CATEGORY_MAP[k].label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Severity</label>
+                    <select className="form-select" value={form.severity}
+                      onChange={e => setForm(p => ({ ...p, severity: e.target.value }))}>
+                      <option value="CRITICAL">CRITICAL</option>
+                      <option value="MODERATE">MODERATE</option>
+                      <option value="LOW">LOW</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label">Landmark / Highway Marker</label>
+                  <input className="form-input" placeholder="e.g. NH-13 Km 84 near Sela Lake" required
+                    value={form.landmark} onChange={e => setForm(p => ({ ...p, landmark: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Description</label>
+                  <textarea className="form-input" rows={2} placeholder="Describe the disruption..."
+                    value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} />
+                </div>
+                <button type="submit" className="btn-rose" style={{ justifyContent: 'center', marginTop: 4 }} disabled={submitting}>
+                  {submitting ? 'Submitting...' : 'Submit Incident Report'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Filter + List */}
+          <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: 6, flexWrap: 'wrap', background: '#f8fafc' }}>
+              {['ALL', 'ACTIVE', 'VERIFIED', 'RESOLVED'].map(f => (
+                <button key={f} className={`tab-item ${filter === f ? 'active' : ''}`}
+                  onClick={() => setFilter(f)} style={{ fontSize: 11.5, padding: '5px 12px' }}>
+                  {f}
+                </button>
+              ))}
+            </div>
+            <div className="scroll-zone" style={{ maxHeight: 480 }}>
+              {loading ? [...Array(3)].map((_, i) => (
+                <div key={i} style={{ padding: 14, borderBottom: '1px solid #f1f5f9' }}>
+                  <div className="skeleton" style={{ height: 60, borderRadius: 8 }} />
+                </div>
+              )) : filtered.map(inc => {
+                const cat = CATEGORY_MAP[inc.category] || CATEGORY_MAP.OTHER;
+                const isSelected = selected?.id === inc.id;
+                return (
+                  <div key={inc.id}
+                    onClick={() => setSelected(isSelected ? null : inc)}
+                    style={{
+                      padding: '14px 18px', borderBottom: '1px solid #f1f5f9',
+                      cursor: 'pointer', transition: 'background 0.15s',
+                      background: isSelected ? '#eff6ff' : '#ffffff',
+                      borderLeft: `3px solid ${isSelected ? cat.color : 'transparent'}`,
+                    }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <span>{cat.icon}</span>
+                        <span style={{ fontWeight: 700, fontSize: 13.5, color: '#0f172a' }}>{inc.title}</span>
+                      </div>
+                      <span className={`badge ${inc.severity === 'CRITICAL' ? 'badge-rose' : inc.severity === 'MODERATE' ? 'badge-amber' : 'badge-emerald'}`} style={{ fontSize: 9.5 }}>
+                        {inc.severity}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#64748b', marginBottom: 6 }}>{inc.landmark}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className={`badge ${inc.status === 'RESOLVED' ? 'badge-emerald' : inc.status === 'VERIFIED' ? 'badge-blue' : 'badge-rose'}`} style={{ fontSize: 9.5 }}>
+                        {inc.status}
+                      </span>
+                      <span style={{ fontSize: 11.5, color: '#d97706', fontWeight: 600 }}>✓ {inc.verification_count || 1}x verified</span>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      {inc.status !== 'RESOLVED' && (
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: 11.5, padding: '5px 12px', gap: 4 }}
+                          onClick={e => { e.stopPropagation(); handleVerify(inc.id); }}
+                        >
+                          <ThumbsUp size={12} /> Verify
+                        </button>
+                      )}
+                      {canResolve && inc.status !== 'RESOLVED' && (
+                        <button
+                          className="btn-emerald"
+                          style={{ fontSize: 11.5, padding: '5px 12px', gap: 4 }}
+                          onClick={e => { e.stopPropagation(); handleResolve(inc.id); }}
+                        >
+                          <CheckCircle size={12} /> Resolve
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Map */}
+        <div>
+          {isReporting && (
+            <div style={{
+              padding: '11px 16px', borderRadius: 10, marginBottom: 12,
+              background: '#fef2f2', border: '1px solid #fecaca',
+              fontSize: 13, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600
+            }}>
+              <AlertTriangle size={15} />
+              Reporting mode ON — click anywhere on the map to pin incident location
+            </div>
+          )}
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
+            <NERMap
+              incidents={incidents}
+              shipments={[]}
+              onMapClick={isReporting ? handleMapClick : null}
+              height="560px"
+              zoom={7}
+            />
+          </div>
+          {mapClickCoords && (
+            <div style={{
+              marginTop: 10, padding: '10px 14px', borderRadius: 10,
+              background: '#eff6ff', border: '1px solid #bfdbfe',
+              fontSize: 12.5, color: '#1d4ed8', textAlign: 'center', fontWeight: 600
+            }}>
+              📍 Coordinates pinned at {mapClickCoords.lat.toFixed(4)}°N, {mapClickCoords.lng.toFixed(4)}°E
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

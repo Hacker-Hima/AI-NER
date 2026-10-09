@@ -275,27 +275,34 @@ export const NERMap = ({
   }, [shipments, selectedShipment]);
 
   return (
-    <div className="relative w-full rounded-xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
+    <div style={{ position: 'relative', width: '100%', borderRadius: 14, overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', background: '#f8fafc' }}>
       <div ref={mapContainerRef} style={{ height: height, width: '100%' }} />
       {/* Visual map legend overlay */}
-      <div className="absolute bottom-3 left-3 z-[1000] bg-slate-900/90 backdrop-blur-md border border-slate-700/60 p-2.5 rounded-lg shadow-lg text-[11px] text-slate-300 flex flex-col gap-1.5 pointer-events-auto">
-        <div className="font-semibold text-slate-100 flex items-center gap-1.5 border-b border-slate-700/60 pb-1">
+      <div style={{
+        position: 'absolute', bottom: 14, left: 14, zIndex: 1000,
+        background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(8px)',
+        border: '1px solid #cbd5e1', padding: '10px 14px', borderRadius: 10,
+        boxShadow: '0 4px 14px rgba(15, 23, 42, 0.08)', fontSize: 11.5,
+        color: '#334155', display: 'flex', flexDirection: 'column', gap: 6,
+        pointerEvents: 'auto'
+      }}>
+        <div style={{ fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1px solid #e2e8f0', paddingBottom: 5 }}>
           <span>Map Intelligence Layers</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-sm bg-sky-500"></span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: '#0284c7', display: 'inline-block' }}></span>
           <span>Active Supply Truck</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#dc2626', display: 'inline-block' }}></span>
           <span>Landslide / Disruption Hazard</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="w-4 h-0.5 border-t border-dashed border-rose-400"></span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 16, height: 2, borderTop: '2px dashed #dc2626', display: 'inline-block' }}></span>
           <span>High Risk National Highway</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="w-4 h-1 bg-emerald-500 rounded"></span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 16, height: 3, background: '#059669', borderRadius: 2, display: 'inline-block' }}></span>
           <span>Recommended Safe Alternative</span>
         </div>
       </div>

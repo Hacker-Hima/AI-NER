@@ -1,292 +1,301 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
-import { Badge } from '../../components/common/Badge';
-import { 
-  BarChart3, 
-  Cpu, 
-  Sliders, 
-  TrendingUp, 
-  Map, 
-  ShieldCheck, 
-  AlertTriangle,
-  Play
-} from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  ResponsiveContainer, 
-  LineChart, 
-  Line, 
-  CartesianGrid 
+import { Zap, Activity, BarChart3, RefreshCw } from 'lucide-react';
+import {
+  RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
+  AreaChart, Area,
 } from 'recharts';
 
+const SliderField = ({ label, value, min, max, step, unit, onChange, color }) => (
+  <div style={{ padding: '14px 0' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+      <label style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{label}</label>
+      <span style={{ fontSize: 13, fontWeight: 700, color: color || '#2563eb' }}>
+        {value} {unit}
+      </span>
+    </div>
+    <input
+      type="range"
+      className="styled-slider"
+      min={min} max={max} step={step}
+      value={value}
+      onChange={e => onChange(parseFloat(e.target.value))}
+    />
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+      <span>{min} {unit}</span><span>{max} {unit}</span>
+    </div>
+  </div>
+);
+
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload?.length) {
+    return (
+      <div style={{
+        background: '#ffffff', border: '1px solid #cbd5e1',
+        borderRadius: 10, padding: '10px 14px', fontSize: 12,
+        boxShadow: '0 10px 25px rgba(15,23,42,0.1)'
+      }}>
+        <div style={{ color: '#64748b', marginBottom: 4, fontWeight: 600 }}>{label}</div>
+        {payload.map((p, i) => (
+          <div key={i} style={{ color: p.color, fontWeight: 700 }}>
+            {p.name}: {p.value}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
 export const AnalyticsPage = () => {
-  const [states, setStates] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [stateData, setStateData] = useState([]);
+  const [cargoData, setCargoData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ML Sandbox Inputs
-  const [sandbox, setSandbox] = useState({
-    corridor_name: "Custom Himalayan Pass",
-    precipitation_24h_mm: 75.0,
-    precipitation_72h_accumulated_mm: 190.0,
-    elevation_change_m: 1450.0,
-    slope_gradient: 34.0,
-    road_vulnerability_index: 0.80,
-    cargo_weight_tonnes: 8.5
+  // ML Sandbox
+  const [mlInput, setMlInput] = useState({
+    corridor_name: 'Custom Simulation Corridor',
+    precipitation_24h_mm: 45,
+    precipitation_72h_accumulated_mm: 120,
+    elevation_change_m: 1200,
+    slope_gradient: 28,
+    road_vulnerability_index: 0.7,
+    cargo_weight_tonnes: 5,
   });
-
   const [mlResult, setMlResult] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
 
-  const fetchAnalytics = async () => {
+  const runMLInference = async (customInput = null) => {
+    setMlLoading(true);
     try {
-      setLoading(true);
-      const res = await api.get('/analytics/state-accessibility');
-      setStates(res.data);
-    } catch (err) {
-      console.error("Failed to fetch state accessibility:", err);
-    } finally {
-      setLoading(false);
-    }
+      const payload = customInput || mlInput;
+      const res = await api.post('/predictions/risk-score', {
+        corridor_name: 'Custom Simulation Corridor',
+        ...payload
+      });
+      setMlResult(res.data);
+    } catch (e) {
+      console.error('ML inference failed', e);
+    } finally { setMlLoading(false); }
   };
 
   useEffect(() => {
-    fetchAnalytics();
+    const fetch = async () => {
+      setLoading(true);
+      try {
+        const [sumR, stateR, cargoR] = await Promise.allSettled([
+          api.get('/analytics/summary'),
+          api.get('/analytics/state-accessibility'),
+          api.get('/analytics/cargo-breakdown'),
+        ]);
+        if (sumR.status === 'fulfilled') setSummary(sumR.value.data);
+        if (stateR.status === 'fulfilled') setStateData(stateR.value.data);
+        if (cargoR.status === 'fulfilled') setCargoData(cargoR.value.data);
+      } catch {}
+      finally { setLoading(false); }
+    };
+    fetch();
     runMLInference();
   }, []);
 
-  const runMLInference = async () => {
-    try {
-      setMlLoading(true);
-      const res = await api.post('/predictions/risk-score', sandbox);
-      setMlResult(res.data);
-    } catch (err) {
-      console.error("ML Inference error:", err);
-    } finally {
-      setMlLoading(false);
-    }
+  const getRiskColor = (level) => {
+    if (level === 'CRITICAL') return '#dc2626';
+    if (level === 'MODERATE') return '#d97706';
+    return '#059669';
   };
 
+  const radarData = mlResult ? [
+    { subject: 'Rainfall', value: Math.round(mlInput.precipitation_24h_mm / 1.5) },
+    { subject: '72h Saturation', value: Math.round(mlInput.precipitation_72h_accumulated_mm / 3.5) },
+    { subject: 'Elevation', value: Math.round(mlInput.elevation_change_m / 26) },
+    { subject: 'Slope', value: Math.round(mlInput.slope_gradient / 0.45) },
+    { subject: 'Vulnerability', value: Math.round(mlInput.road_vulnerability_index * 100) },
+    { subject: 'Cargo Load', value: Math.round(mlInput.cargo_weight_tonnes / 0.25) },
+  ] : [];
+
   return (
-    <div className="space-y-6">
-      
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <BarChart3 className="w-6 h-6 text-emerald-400" />
-          Regional Accessibility & AI Prediction Sandbox
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Deep analytics on terrain accessibility across the 8 North Eastern states, paired with an interactive Scikit-learn inference simulator.
-        </p>
+        <h2 className="section-title" style={{ fontSize: 20, color: '#0f172a' }}>AI Analytics & Risk Sandbox</h2>
+        <p className="section-subtitle">Live Regional Metrics + Random Forest ML Inference Engine</p>
       </div>
 
-      {/* 8 NER States Accessibility Grid */}
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-          <Map className="w-4 h-4 text-emerald-400" />
-          Accessibility Profile by State
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {states.map((st) => {
-            const isHigh = st.accessibility_index >= 80;
-            const isMed = st.accessibility_index >= 65 && st.accessibility_index < 80;
-            return (
-              <div
-                key={st.state}
-                className="bg-slate-900/70 border border-slate-800 p-4 rounded-xl hover:border-slate-700 transition"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-100">{st.state}</span>
-                  <Badge variant={isHigh ? 'success' : isMed ? 'warning' : 'danger'}>
-                    {st.accessibility_index}% Operable
-                  </Badge>
-                </div>
-                <div className="text-xs text-slate-400 mt-2">{st.terrain}</div>
-                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-                  <span>Active Hazards: <b className={st.active_hazards > 1 ? 'text-rose-400' : 'text-slate-200'}>{st.active_hazards}</b></span>
-                  <span className="text-[11px] text-emerald-400 font-medium">Monitored</span>
-                </div>
-              </div>
-            );
-          })}
+      {/* Summary KPIs */}
+      {summary && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14 }}>
+          {[
+            { label: 'Total Shipments', value: summary.total_shipments, color: '#2563eb', bg: '#eff6ff' },
+            { label: 'In Transit', value: summary.in_transit, color: '#059669', bg: '#ecfdf5' },
+            { label: 'Delayed', value: summary.delayed, color: '#d97706', bg: '#fffbeb' },
+            { label: 'Delivered', value: summary.delivered, color: '#047857', bg: '#ecfdf5' },
+            { label: 'Active Incidents', value: summary.active_incidents, color: '#dc2626', bg: '#fef2f2' },
+            { label: 'High Risk', value: summary.high_risk_alerts, color: '#ea580c', bg: '#fff7ed' },
+          ].map(s => (
+            <div key={s.label} style={{
+              padding: '16px 14px', borderRadius: 12,
+              background: '#ffffff', border: '1px solid #e2e8f0',
+              textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+            }}>
+              <div style={{ fontSize: 26, fontWeight: 800, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 4, fontWeight: 600 }}>{s.label}</div>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
 
-      {/* Interactive AI Model Sandbox */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-6">
-          <div>
-            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-              <Cpu className="w-5 h-5 text-cyan-400" />
-              Interactive AI Inference Engine (Random Forest)
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Simulate weather and geological conditions to evaluate real-time disruption probability and transit delay.
-            </p>
+      {/* Main Layout: ML Sandbox + Charts */}
+      <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 20 }}>
+        {/* ML Sandbox */}
+        <div className="glass-card" style={{ padding: 22 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Zap size={18} color="#d97706" />
+            <div className="section-title" style={{ fontSize: 16, color: '#0f172a' }}>AI Risk Prediction Sandbox</div>
           </div>
+          <p style={{ fontSize: 12.5, color: '#64748b', marginBottom: 18 }}>
+            Adjust environmental parameters → run Random Forest ML inference
+          </p>
+
+          <div style={{ borderTop: '1px solid #e2e8f0' }}>
+            <SliderField label="24h Rainfall" value={mlInput.precipitation_24h_mm}
+              min={0} max={250} step={5} unit="mm"
+              onChange={v => setMlInput(p => ({ ...p, precipitation_24h_mm: v }))}
+              color="#0284c7" />
+            <SliderField label="72h Accumulated Rainfall" value={mlInput.precipitation_72h_accumulated_mm}
+              min={0} max={600} step={10} unit="mm"
+              onChange={v => setMlInput(p => ({ ...p, precipitation_72h_accumulated_mm: v }))}
+              color="#2563eb" />
+            <SliderField label="Elevation Change" value={mlInput.elevation_change_m}
+              min={100} max={3000} step={50} unit="m"
+              onChange={v => setMlInput(p => ({ ...p, elevation_change_m: v }))}
+              color="#7c3aed" />
+            <SliderField label="Slope Gradient" value={mlInput.slope_gradient}
+              min={5} max={45} step={1} unit="°"
+              onChange={v => setMlInput(p => ({ ...p, slope_gradient: v }))}
+              color="#d97706" />
+            <SliderField label="Road Vulnerability Index" value={mlInput.road_vulnerability_index}
+              min={0.1} max={1.0} step={0.05} unit=""
+              onChange={v => setMlInput(p => ({ ...p, road_vulnerability_index: v }))}
+              color="#dc2626" />
+            <SliderField label="Cargo Weight" value={mlInput.cargo_weight_tonnes}
+              min={1} max={20} step={0.5} unit="T"
+              onChange={v => setMlInput(p => ({ ...p, cargo_weight_tonnes: v }))}
+              color="#059669" />
+          </div>
+
           <button
+            className="btn-primary"
+            style={{ width: '100%', justifyContent: 'center', marginTop: 16 }}
             onClick={runMLInference}
             disabled={mlLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 transition self-start sm:self-auto"
           >
-            <Play className={`w-3.5 h-3.5 ${mlLoading ? 'animate-spin' : ''}`} />
-            Run ML Inference
+            {mlLoading ? (
+              <div style={{ width: 15, height: 15, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            ) : <Zap size={15} />}
+            {mlLoading ? 'Running Inference...' : 'Run ML Inference'}
           </button>
+
+          {/* ML Result */}
+          {mlResult && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ padding: '18px 20px', borderRadius: 14,
+                background: `${getRiskColor(mlResult.risk_level)}10`,
+                border: `1px solid ${getRiskColor(mlResult.risk_level)}30`,
+                textAlign: 'center', marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+                  Disruption Probability
+                </div>
+                <div style={{ fontSize: 46, fontWeight: 900, color: getRiskColor(mlResult.risk_level), lineHeight: 1 }}>
+                  {Math.round(mlResult.disruption_probability * 100)}%
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <span style={{
+                    padding: '4px 14px', borderRadius: 99, fontWeight: 700, fontSize: 12,
+                    background: `${getRiskColor(mlResult.risk_level)}20`,
+                    color: getRiskColor(mlResult.risk_level),
+                    border: `1px solid ${getRiskColor(mlResult.risk_level)}40`,
+                  }}>
+                    {mlResult.risk_level}
+                  </span>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 13, color: '#334155' }}>
+                  Expected Delay: <strong style={{ color: '#0f172a' }}>+{mlResult.expected_delay_mins} mins</strong>
+                </div>
+              </div>
+
+              {mlResult.contributing_factors?.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2, fontWeight: 600 }}>
+                    Contributing Factors
+                  </div>
+                  {mlResult.contributing_factors.map((f, i) => (
+                    <div key={i} style={{
+                      padding: '8px 12px', borderRadius: 8, fontSize: 12, color: '#92400e',
+                      background: '#fffbeb', border: '1px solid #fde68a',
+                      display: 'flex', alignItems: 'center', gap: 7
+                    }}>
+                      ⚠️ {f}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Sliders Form (7 cols) */}
-          <div className="lg:col-span-7 space-y-4">
-            
-            {/* 24h Precipitation */}
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="font-semibold text-slate-300">24-Hour Rainfall</span>
-                <span className="text-cyan-400 font-bold">{sandbox.precipitation_24h_mm} mm</span>
+        {/* Right Charts */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Radar Chart */}
+          {mlResult && (
+            <div className="glass-card" style={{ padding: 22 }}>
+              <div className="section-title" style={{ fontSize: 15, marginBottom: 12, color: '#0f172a' }}>
+                Risk Factor Radar — Parameter Profile
               </div>
-              <input
-                type="range"
-                min="0"
-                max="250"
-                step="5"
-                value={sandbox.precipitation_24h_mm}
-                onChange={e => setSandbox({ ...sandbox, precipitation_24h_mm: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
-              />
-            </div>
-
-            {/* 72h Cumulative Precipitation */}
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="font-semibold text-slate-300">72-Hour Accumulated Rainfall (Soil Saturation)</span>
-                <span className="text-cyan-400 font-bold">{sandbox.precipitation_72h_accumulated_mm} mm</span>
+              <div style={{ height: 230 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="#e2e8f0" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 11 }} />
+                    <Radar name="Parameters" dataKey="value" stroke={getRiskColor(mlResult.risk_level)}
+                      fill={getRiskColor(mlResult.risk_level)} fillOpacity={0.2} strokeWidth={2} />
+                  </RadarChart>
+                </ResponsiveContainer>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="600"
-                step="10"
-                value={sandbox.precipitation_72h_accumulated_mm}
-                onChange={e => setSandbox({ ...sandbox, precipitation_72h_accumulated_mm: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
-              />
             </div>
+          )}
 
-            {/* Slope Gradient */}
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="font-semibold text-slate-300">Mountain Slope Gradient</span>
-                <span className="text-cyan-400 font-bold">{sandbox.slope_gradient}°</span>
-              </div>
-              <input
-                type="range"
-                min="5"
-                max="45"
-                step="1"
-                value={sandbox.slope_gradient}
-                onChange={e => setSandbox({ ...sandbox, slope_gradient: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
-              />
+          {/* State Accessibility */}
+          <div className="glass-card" style={{ padding: 22 }}>
+            <div className="section-title" style={{ fontSize: 15, marginBottom: 14, color: '#0f172a' }}>
+              8 NER States — Accessibility vs. Active Hazards
             </div>
-
-            {/* Elevation Change */}
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="font-semibold text-slate-300">Corridor Elevation Change</span>
-                <span className="text-cyan-400 font-bold">{sandbox.elevation_change_m} m</span>
-              </div>
-              <input
-                type="range"
-                min="100"
-                max="2600"
-                step="50"
-                value={sandbox.elevation_change_m}
-                onChange={e => setSandbox({ ...sandbox, elevation_change_m: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
-              />
-            </div>
-
-            {/* Cargo Weight */}
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="font-semibold text-slate-300">Convoy Cargo Weight</span>
-                <span className="text-cyan-400 font-bold">{sandbox.cargo_weight_tonnes} Tonnes</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="25"
-                step="0.5"
-                value={sandbox.cargo_weight_tonnes}
-                onChange={e => setSandbox({ ...sandbox, cargo_weight_tonnes: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
-              />
-            </div>
-
-          </div>
-
-          {/* Model Prediction Output Card (5 cols) */}
-          <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
-            {mlResult ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span className="text-xs font-semibold text-slate-400">Prediction Output</span>
-                  <Badge variant={mlResult.risk_level === 'CRITICAL' ? 'danger' : mlResult.risk_level === 'MODERATE' ? 'warning' : 'success'}>
-                    {mlResult.risk_level} RISK
-                  </Badge>
-                </div>
-
-                <div>
-                  <div className="text-xs text-slate-400">Road Disruption Probability</div>
-                  <div className={`text-4xl font-extrabold mt-1 ${mlResult.risk_level === 'CRITICAL' ? 'text-rose-400' : 'text-emerald-400'}`}>
-                    {Math.round(mlResult.disruption_probability * 100)}%
-                  </div>
-                  <div className="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-500 ${mlResult.risk_level === 'CRITICAL' ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                      style={{ width: `${mlResult.disruption_probability * 100}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs text-slate-400">Predicted Transit Delay Delta</div>
-                  <div className="text-2xl font-bold text-amber-400 mt-1">
-                    +{mlResult.expected_delay_mins} Minutes
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold text-slate-300 mb-1.5">Dominant Model Factors:</div>
-                  <ul className="text-xs text-slate-400 space-y-1">
-                    {mlResult.contributing_factors.map((f, i) => (
-                      <li key={i} className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                        <span>{f}</span>
-                      </li>
+            <div style={{ height: mlResult ? 210 : 320 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stateData} margin={{ top: 5, right: 5, left: -20, bottom: 30 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="state" stroke="#64748b" fontSize={11}
+                    interval={0} angle={-25} textAnchor="end" tickLine={false} />
+                  <YAxis stroke="#64748b" fontSize={11} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="accessibility_index" name="Accessibility %" radius={[5, 5, 0, 0]}>
+                    {stateData.map((entry, i) => (
+                      <Cell key={i} fill={
+                        entry.accessibility_index > 85 ? '#059669' :
+                        entry.accessibility_index > 70 ? '#2563eb' :
+                        entry.accessibility_index > 60 ? '#d97706' : '#dc2626'
+                      } />
                     ))}
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center text-xs text-slate-500 my-auto">
-                Adjust sliders and click "Run ML Inference" to inspect predictions.
-              </div>
-            )}
-
-            <div className="text-[10px] text-slate-500 pt-3 border-t border-slate-900 mt-4">
-              Model: Random Forest Estimators (Trained on historical rainfall, slope degree & elevation).
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
-
         </div>
       </div>
 
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };
