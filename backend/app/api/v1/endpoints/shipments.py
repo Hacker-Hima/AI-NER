@@ -56,15 +56,102 @@ async def list_shipments(
     docs = await cursor.to_list(length=100)
     return [doc_to_shipment_res(d) for d in docs]
 
+@router.get("/drivers/status")
+async def get_drivers_status():
+    db = get_database()
+    if db is None:
+        return []
+        
+    drivers = await db.users.find({"role": "field_driver"}).to_list(100)
+    active_shipments = await db.shipments.find({
+        "status": {"$in": ["IN_TRANSIT", "SCHEDULED", "DELAYED", "REROUTED"]}
+    }).to_list(200)
+    
+    driver_busy_map = {}
+    for s in active_shipments:
+        d_id = str(s.get("assigned_driver_id", ""))
+        if d_id:
+            driver_busy_map[d_id] = {
+                "shipment_id": str(s["_id"]),
+                "tracking_number": s.get("tracking_number"),
+                "cargo": s.get("cargo_type"),
+                "status": s.get("status")
+            }
+            
+    result = []
+    for d in drivers:
+        d_id = str(d["_id"])
+        busy_info = driver_busy_map.get(d_id)
+        result.append({
+            "id": d_id,
+            "full_name": d.get("full_name", "Field Driver"),
+            "email": d.get("email"),
+            "phone": d.get("phone", "+919862000000"),
+            "region": d.get("region", "NER"),
+            "is_available": busy_info is None,
+            "current_work": busy_info
+        })
+    return result
+
 @router.post("/", response_model=ShipmentResponse)
 async def create_shipment(
     shipment_in: ShipmentCreate,
     current_user: dict = Depends(get_current_user)
 ):
+    # Enforce role: Only Admin or Logistics Coordinator can dispatch
+    user_role = current_user.get("role", "")
+    if user_role not in ["admin", "logistics_coordinator"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Admins or Logistics Coordinators can dispatch convoys and assign drivers."
+        )
+
     db = get_database()
     if db is None:
         raise HTTPException(status_code=500, detail="Database connection unavailable")
-        
+
+    # Fetch active driver assignments to determine who is already in work
+    active_jobs = await db.shipments.find({
+        "status": {"$in": ["IN_TRANSIT", "SCHEDULED", "DELAYED", "REROUTED"]}
+    }).to_list(200)
+    busy_driver_map = {str(j.get("assigned_driver_id")): j for j in active_jobs if j.get("assigned_driver_id")}
+
+    assigned_driver_id = None
+    assigned_driver_name = "NER Logistics Fleet"
+
+    if shipment_in.assigned_driver_id:
+        # Validate that the selected driver exists and is currently idle
+        try:
+            driver_doc = await db.users.find_one({"_id": ObjectId(shipment_in.assigned_driver_id)})
+        except Exception:
+            driver_doc = None
+
+        if not driver_doc:
+            raise HTTPException(status_code=400, detail="Selected driver does not exist.")
+
+        driver_id_str = str(driver_doc["_id"])
+        if driver_id_str in busy_driver_map:
+            busy_job = busy_driver_map[driver_id_str]
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Driver {driver_doc.get('full_name')} is already on active convoy ({busy_job.get('tracking_number')}). Please select an idle driver who is not in work."
+            )
+
+        assigned_driver_id = driver_id_str
+        assigned_driver_name = driver_doc.get("full_name", "Field Driver")
+    else:
+        # Auto-assign the first idle driver who has no active work
+        all_drivers = await db.users.find({"role": "field_driver"}).to_list(100)
+        idle_driver = next((d for d in all_drivers if str(d["_id"]) not in busy_driver_map), None)
+
+        if idle_driver:
+            assigned_driver_id = str(idle_driver["_id"])
+            assigned_driver_name = idle_driver.get("full_name", "Field Driver")
+        elif all_drivers:
+            # Fallback if every driver is deployed
+            assigned_driver_id = str(all_drivers[0]["_id"])
+            assigned_driver_name = f"{all_drivers[0].get('full_name')} (Standby Queue)"
+
     tracking_num = f"NER-{shipment_in.priority[:3]}-{random.randint(1000, 9999)}"
     
     # Calculate initial route & risk
@@ -88,8 +175,8 @@ async def create_shipment(
             "lat": shipment_in.origin.lat,
             "lng": shipment_in.origin.lng
         },
-        "assigned_driver_id": current_user.get("id"),
-        "assigned_driver_name": current_user.get("full_name", "NER Logistics Fleet"),
+        "assigned_driver_id": assigned_driver_id,
+        "assigned_driver_name": assigned_driver_name,
         "risk_score": std_route["overall_risk_score"],
         "risk_level": std_route["risk_level"],
         "estimated_delay_mins": std_route["delay_delta_mins"],

@@ -62,7 +62,13 @@ export const LoginPage = () => {
         navigate('/');
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid username or password. Please try again.');
+      if (err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError('Cannot reach backend at http://localhost:8000. Please ensure the backend is running.');
+      } else {
+        setError('Invalid username or password. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

@@ -42,6 +42,7 @@ export const ShipmentsPage = () => {
   const [selected, setSelected] = useState(null);
   const [activeRoutes, setActiveRoutes] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [driversList, setDriversList] = useState([]);
   const [simulatingId, setSimulatingId] = useState(null);
   const [rerouting, setRerouting] = useState(false);
   const [toast, setToast] = useState(null);
@@ -52,12 +53,22 @@ export const ShipmentsPage = () => {
     weight_tonnes: 3.5,
     originIndex: 0,
     destinationIndex: 1,
+    assigned_driver_id: '',
     notes: 'Urgent mountain transit dispatch',
   });
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
+  };
+
+  const fetchDrivers = async () => {
+    try {
+      const res = await api.get('/shipments/drivers/status');
+      setDriversList(res.data);
+    } catch (err) {
+      console.error('Failed to load drivers status', err);
+    }
   };
 
   const fetchShipments = async () => {
@@ -109,13 +120,14 @@ export const ShipmentsPage = () => {
         weight_tonnes: parseFloat(form.weight_tonnes),
         origin: { name: origin.name, lat: origin.lat, lng: origin.lng },
         destination: { name: dest.name, lat: dest.lat, lng: dest.lng },
+        assigned_driver_id: form.assigned_driver_id || undefined,
         notes: form.notes,
       });
       setIsModalOpen(false);
-      showToast('Shipment dispatched and ML risk calculated!', 'success');
+      showToast('Convoy dispatched and field driver assigned successfully!', 'success');
       fetchShipments();
     } catch (err) {
-      showToast(err.response?.data?.detail || 'Failed to create shipment. Ensure you are logged in.', 'error');
+      showToast(err.response?.data?.detail || 'Failed to dispatch shipment. Only Admins and Coordinators can dispatch.', 'error');
     }
   };
 
@@ -216,7 +228,7 @@ export const ShipmentsPage = () => {
             ))}
           </div>
           {canDispatch && (
-            <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+            <button className="btn-primary" onClick={() => { setIsModalOpen(true); fetchDrivers(); }}>
               <Plus size={15} /> Dispatch
             </button>
           )}
@@ -432,8 +444,37 @@ export const ShipmentsPage = () => {
               </div>
 
               <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>Assign Field Driver</label>
+                  <span style={{ fontSize: '11px', color: '#059669', fontWeight: 700 }}>
+                    {driversList.filter(d => d.is_available).length} Idle Driver(s) Available
+                  </span>
+                </div>
+                <select
+                  className="form-select"
+                  value={form.assigned_driver_id}
+                  onChange={e => setForm(p => ({ ...p, assigned_driver_id: e.target.value }))}
+                >
+                  <option value="">⚡ Auto-Assign First Available Idle Driver</option>
+                  {driversList.map(d => (
+                    <option
+                      key={d.id}
+                      value={d.id}
+                      disabled={!d.is_available}
+                      style={{ color: d.is_available ? '#0f172a' : '#94a3b8' }}
+                    >
+                      {d.is_available ? '🟢' : '🔴'} {d.full_name} ({d.region}) — {d.is_available ? 'Available (Idle)' : `Busy on ${d.current_work?.tracking_number}`}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: 3 }}>
+                  * Drivers currently assigned to active mountain convoys are marked busy and cannot be selected.
+                </div>
+              </div>
+
+              <div>
                 <label className="form-label">Notes / Special Instructions</label>
-                <textarea className="form-input" rows={3} value={form.notes}
+                <textarea className="form-input" rows={2} value={form.notes}
                   onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
               </div>
 

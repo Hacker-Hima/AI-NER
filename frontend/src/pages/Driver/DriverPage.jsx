@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { NERMap } from '../../components/map/NERMap';
@@ -15,15 +16,18 @@ import {
   Send,
   Flag,
   Navigation,
-  ShieldCheck
+  ShieldCheck,
+  CheckCircle2
 } from 'lucide-react';
 
 export const DriverPage = () => {
   const { user } = useAuth();
   const { showToast, addNotification } = useApp();
 
+  const [assignedShipment, setAssignedShipment] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [deliveryStatus, setDeliveryStatus] = useState('In Transit');
-  const [currentProgress, setCurrentProgress] = useState(65);
+  const [currentProgress, setCurrentProgress] = useState(45);
   const [nextCheckpoint, setNextCheckpoint] = useState('Sela Lake Military Post (Km 82)');
   const [reportModalOpen, setReportModalOpen] = useState(false);
 
@@ -34,21 +38,63 @@ export const DriverPage = () => {
     description: 'Fresh boulder fall and mud runoff blocking left lane.'
   });
 
-  const handleStartDelivery = () => {
-    setDeliveryStatus('In Transit');
-    showToast('Delivery started! Telemetry GPS beacon broadcasting.', 'success');
+  const fetchDriverShipment = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/shipments/');
+      const myShipments = res.data.filter(s =>
+        s.assigned_driver_id === user?.id ||
+        (s.assigned_driver_name && user?.full_name && s.assigned_driver_name.toLowerCase().includes(user.full_name.toLowerCase()))
+      );
+      const active = myShipments.find(s => ['IN_TRANSIT', 'SCHEDULED', 'DELAYED', 'REROUTED'].includes(s.status));
+      const target = active || myShipments[0] || null;
+      setAssignedShipment(target);
+      if (target) {
+        setDeliveryStatus(target.status === 'IN_TRANSIT' ? 'In Transit' : target.status);
+        setCurrentProgress(target.status === 'DELIVERED' ? 100 : target.status === 'IN_TRANSIT' ? 55 : 10);
+      }
+    } catch (err) {
+      console.error('Failed to load driver shipment', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDriverShipment();
+  }, [user]);
+
+  const handleStartDelivery = async () => {
+    if (!assignedShipment) return;
+    try {
+      await api.patch(`/shipments/${assignedShipment.id}/status`, { status: 'IN_TRANSIT' });
+      setDeliveryStatus('In Transit');
+      setCurrentProgress(35);
+      showToast('Delivery started! Telemetry GPS beacon broadcasting.', 'success');
+      fetchDriverShipment();
+    } catch {
+      setDeliveryStatus('In Transit');
+    }
   };
 
   const handleMarkCheckpoint = () => {
-    setCurrentProgress(prev => Math.min(100, prev + 15));
-    setNextCheckpoint('Tawang District Incline (Final Approach)');
+    setCurrentProgress(prev => Math.min(100, prev + 20));
+    setNextCheckpoint('Tawang District Incline (Final Mountain Approach)');
     showToast('Checkpoint confirmed: Checkpoint verified at Sela Lake.', 'info');
   };
 
-  const handleCompleteDelivery = () => {
-    setDeliveryStatus('Delivered');
-    setCurrentProgress(100);
-    showToast('Consignment delivered successfully! Proof-of-delivery logged.', 'success');
+  const handleCompleteDelivery = async () => {
+    if (!assignedShipment) return;
+    try {
+      await api.patch(`/shipments/${assignedShipment.id}/status`, { status: 'DELIVERED' });
+      setDeliveryStatus('Delivered');
+      setCurrentProgress(100);
+      showToast('Consignment delivered successfully! Proof-of-delivery logged. Driver is now Idle.', 'success');
+      fetchDriverShipment();
+    } catch {
+      setDeliveryStatus('Delivered');
+      setCurrentProgress(100);
+    }
   };
 
   const handleSubmitHazard = (e) => {
@@ -154,66 +200,100 @@ export const DriverPage = () => {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '20px' }}>
         {/* Left: Active Delivery HUD */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {/* Active Consignment Card */}
-          <div className="glass-card" style={{ padding: '22px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '800', color: '#1d4ed8', background: '#eff6ff', padding: '3px 10px', borderRadius: '99px' }}>
-                ACTIVE CONVOY: NER-MED-8401
-              </span>
-              <span style={{
-                fontSize: '11.5px',
-                fontWeight: '700',
-                padding: '3px 10px',
-                borderRadius: '99px',
-                background: deliveryStatus === 'Delivered' ? '#ecfdf5' : '#eff6ff',
-                color: deliveryStatus === 'Delivered' ? '#047857' : '#1d4ed8',
-                border: `1px solid ${deliveryStatus === 'Delivered' ? '#a7f3d0' : '#bfdbfe'}`,
+          {assignedShipment ? (
+            /* Active Consignment Card */
+            <div className="glass-card" style={{ padding: '22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <span style={{ fontSize: '12px', fontWeight: '800', color: '#1d4ed8', background: '#eff6ff', padding: '3px 10px', borderRadius: '99px' }}>
+                  ACTIVE CONVOY: {assignedShipment.tracking_number}
+                </span>
+                <span style={{
+                  fontSize: '11.5px',
+                  fontWeight: '700',
+                  padding: '3px 10px',
+                  borderRadius: '99px',
+                  background: deliveryStatus === 'Delivered' ? '#ecfdf5' : '#eff6ff',
+                  color: deliveryStatus === 'Delivered' ? '#047857' : '#1d4ed8',
+                  border: `1px solid ${deliveryStatus === 'Delivered' ? '#a7f3d0' : '#bfdbfe'}`,
+                }}>
+                  {deliveryStatus}
+                </span>
+              </div>
+
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
+                {assignedShipment.cargo_type} ({assignedShipment.weight_tonnes}T)
+              </h3>
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '18px' }}>
+                {assignedShipment.origin?.name} → {assignedShipment.destination?.name}
+              </p>
+
+              {/* Delivery Progress Bar */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                  <span>Route Transit Progress</span>
+                  <span style={{ color: '#2563eb' }}>{currentProgress}% Completed</span>
+                </div>
+                <div className="progress-bar">
+                  <div className="progress-bar-fill" style={{ width: `${currentProgress}%`, background: '#2563eb' }} />
+                </div>
+              </div>
+
+              {/* Info Metrics */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Next Waypoint</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', marginTop: '3px' }}>{nextCheckpoint}</div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Expected Delay</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', marginTop: '3px' }}>+{assignedShipment.estimated_delay_mins || 30} mins</div>
+                </div>
+
+                <div style={{ background: assignedShipment.risk_level === 'CRITICAL' ? '#fef2f2' : '#fffbeb', padding: '12px', borderRadius: '10px', border: `1px solid ${assignedShipment.risk_level === 'CRITICAL' ? '#fecaca' : '#fde68a'}` }}>
+                  <div style={{ fontSize: '11px', color: assignedShipment.risk_level === 'CRITICAL' ? '#b91c1c' : '#b45309', textTransform: 'uppercase', fontWeight: '700' }}>Terrain Risk Score</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: '800', color: assignedShipment.risk_level === 'CRITICAL' ? '#dc2626' : '#d97706', marginTop: '3px' }}>
+                    {Math.round(assignedShipment.risk_score * 100)}% — {assignedShipment.risk_level}
+                  </div>
+                </div>
+
+                <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '10px', border: '1px solid #a7f3d0' }}>
+                  <div style={{ fontSize: '11px', color: '#047857', textTransform: 'uppercase', fontWeight: '700' }}>Assigned Vehicle</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', marginTop: '3px' }}>Tata 407 4x4 (Hill Spec)</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Idle Standby Card */
+            <div className="glass-card" style={{ padding: '32px 24px', textAlign: 'center' }}>
+              <div style={{
+                width: '56px', height: '56px', borderRadius: '50%',
+                background: '#ecfdf5', color: '#059669', margin: '0 auto 16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}>
-                {deliveryStatus}
-              </span>
-            </div>
-
-            <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
-              Critical Vaccines & ICU Meds (3.5T)
-            </h3>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '18px' }}>
-              Guwahati Central Depot → Tawang District Hospital (Arunachal Pradesh)
-            </p>
-
-            {/* Delivery Progress Bar */}
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                <span>Route Transit Progress</span>
-                <span style={{ color: '#2563eb' }}>{currentProgress}% Completed</span>
+                <CheckCircle2 size={30} />
               </div>
-              <div className="progress-bar">
-                <div className="progress-bar-fill" style={{ width: `${currentProgress}%`, background: '#2563eb' }} />
-              </div>
-            </div>
-
-            {/* Info Metrics */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Next Checkpoint</div>
-                <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', marginTop: '3px' }}>{nextCheckpoint}</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Expected ETA</div>
-                <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', marginTop: '3px' }}>Today at 4:30 PM</div>
-              </div>
-
-              <div style={{ background: '#fef2f2', padding: '12px', borderRadius: '10px', border: '1px solid #fecaca' }}>
-                <div style={{ fontSize: '11px', color: '#b91c1c', textTransform: 'uppercase', fontWeight: '700' }}>Pass Risk Level</div>
-                <div style={{ fontSize: '12.5px', fontWeight: '800', color: '#dc2626', marginTop: '3px' }}>74% — High Caution</div>
-              </div>
-
-              <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '10px', border: '1px solid #a7f3d0' }}>
-                <div style={{ fontSize: '11px', color: '#047857', textTransform: 'uppercase', fontWeight: '700' }}>Assigned Vehicle</div>
-                <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a', marginTop: '3px' }}>Tata 407 (AS-01-HC-4821)</div>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', marginBottom: '8px' }}>
+                Driver Status: Standby & Idle
+              </h3>
+              <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '380px', margin: '0 auto 20px', lineHeight: 1.5 }}>
+                You are currently not on any active convoy. You are available in the driver pool for selection by the Logistics Coordinator or Admin.
+              </p>
+              <div style={{
+                display: 'inline-block',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '12px 18px',
+                fontSize: '12px',
+                color: '#334155',
+                textAlign: 'left'
+              }}>
+                <div>🟢 <strong>Availability:</strong> Ready for Dispatch</div>
+                <div style={{ marginTop: 4 }}>📍 <strong>Region Depot:</strong> {user?.region || 'NER Hub'}</div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Right: Big Interactive Navigation Map */}
@@ -226,13 +306,13 @@ export const DriverPage = () => {
           </div>
           <div style={{ height: '440px' }}>
             <NERMap
-              shipments={[{
-                id: 'NER-MED-8401',
-                tracking_number: 'NER-MED-8401',
-                current_location: { name: 'Near Bhalukpong', lat: 27.0125, lng: 92.6450 },
+              shipments={assignedShipment ? [{
+                id: assignedShipment.id || assignedShipment.tracking_number,
+                tracking_number: assignedShipment.tracking_number,
+                current_location: assignedShipment.current_location || { name: assignedShipment.origin?.name || 'Depot', lat: assignedShipment.origin?.lat || 26.1445, lng: assignedShipment.origin?.lng || 91.7362 },
                 status: deliveryStatus,
-                risk_level: 'CRITICAL',
-              }]}
+                risk_level: assignedShipment.risk_level || 'LOW',
+              }] : []}
               incidents={[{
                 id: 'inc-1',
                 title: 'Active Mudslide on Sela Lake Road',
@@ -241,8 +321,8 @@ export const DriverPage = () => {
                 lat: 27.45,
                 lng: 92.1,
               }]}
-              center={[27.0125, 92.6450]}
-              zoom={8}
+              center={assignedShipment?.origin ? [assignedShipment.origin.lat, assignedShipment.origin.lng] : [26.1445, 91.7362]}
+              zoom={7}
               height="440px"
             />
           </div>

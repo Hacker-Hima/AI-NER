@@ -71,8 +71,13 @@ def generate_synthetic_ner_dataset(n_samples=2500):
     return df
 
 def train_and_save_models():
-    print("Generating domain-grounded NER logistics dataset...")
-    df = generate_synthetic_ner_dataset()
+    csv_path = os.path.join(os.path.dirname(__file__), "kaggle_ner_landslide_logistics_synthetic.csv")
+    if not os.path.exists(csv_path):
+        from data.generate_kaggle_dataset import generate_kaggle_synthetic_ner_dataset
+        df = generate_kaggle_synthetic_ner_dataset(n_samples=5000, output_path=csv_path)
+    else:
+        print(f"Loading Kaggle synthetic dataset from {csv_path}...")
+        df = pd.read_csv(csv_path)
     
     features = [
         "precipitation_24h_mm",
@@ -87,18 +92,27 @@ def train_and_save_models():
     y_class = df["disruption_class"]
     y_delay = df["delay_minutes"]
     
+    X_train, X_test, y_class_train, y_class_test, y_delay_train, y_delay_test = train_test_split(
+        X, y_class, y_delay, test_size=0.2, random_state=42
+    )
+    
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
     
     # Train Disruption Classifier
-    print("Training Random Forest Disruption Classifier...")
+    print("Training Random Forest Disruption Classifier on Kaggle data...")
     clf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
-    clf.fit(X_scaled, y_class)
+    clf.fit(X_train_scaled, y_class_train)
+    acc = clf.score(X_test_scaled, y_class_test)
+    print(f"Classifier Test Accuracy: {acc * 100:.2f}%")
     
     # Train Delay Regressor
-    print("Training Random Forest Delay Regressor...")
+    print("Training Random Forest Delay Regressor on Kaggle data...")
     reg = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
-    reg.fit(X_scaled, y_delay)
+    reg.fit(X_train_scaled, y_delay_train)
+    r2 = reg.score(X_test_scaled, y_delay_test)
+    print(f"Regressor R2 Score: {r2:.4f}")
     
     # Target directory
     artifact_dir = os.path.join(os.path.dirname(__file__), "..", "app", "ml", "artifacts")

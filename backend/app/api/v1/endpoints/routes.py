@@ -9,8 +9,9 @@ router = APIRouter()
 async def calculate_route_options(req: RouteCalculationRequest):
     origin = (req.origin.lat, req.origin.lng)
     dest = (req.destination.lat, req.destination.lng)
+    cargo_weight = req.cargo_weight_tonnes or 3.0
     
-    result = await route_service.calculate_routes(origin, dest)
+    result = await route_service.calculate_routes(origin, dest, cargo_weight=cargo_weight)
     return RouteComparisonResponse(
         standard_route=result["standard_route"],
         safe_alternative_route=result["safe_alternative_route"],

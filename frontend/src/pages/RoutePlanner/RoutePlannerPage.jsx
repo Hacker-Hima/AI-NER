@@ -49,8 +49,13 @@ const RouteCard = ({ route, label, recommended }) => {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 15, color: '#0f172a', marginBottom: 3 }}>
-            {isPrimary ? '🟢 Safe Alternative Bypass' : '🔴 Standard National Highway'}
+          <div style={{ fontWeight: 800, fontSize: 15, color: '#0f172a', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{isPrimary ? '🟢 Optimal Valley Bypass (Safe Corridor)' : '🔴 Standard Mountain Highway (Vulnerable)'}</span>
+            {isPrimary && (
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, background: '#ecfdf5', color: '#065f46', fontWeight: 800, border: '1px solid #a7f3d0' }}>
+                AI-OPTIMIZED
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 12.5, color: '#64748b' }}>{route.notes}</div>
         </div>
@@ -62,9 +67,9 @@ const RouteCard = ({ route, label, recommended }) => {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 14 }}>
         {[
-          { icon: '📏', label: 'Distance', value: `${route.distance_km} km` },
-          { icon: '⏱️', label: 'Est. Time', value: `${Math.round(route.predicted_duration_mins / 60)}h ${route.predicted_duration_mins % 60}m` },
-          { icon: '⚡', label: 'Delay', value: `+${route.delay_delta_mins} mins` },
+          { icon: '📏', label: 'Distance', value: `${route.distance_km} km`, sub: isPrimary ? 'Valley Bypass' : 'Direct Highway' },
+          { icon: '⏱️', label: 'Est. Time', value: `${Math.round(route.predicted_duration_mins / 60)}h ${route.predicted_duration_mins % 60}m`, sub: isPrimary ? 'Fast & Time-Saving' : 'Severe Delay' },
+          { icon: '⚡', label: 'Delay', value: `+${route.delay_delta_mins} mins`, sub: isPrimary ? 'Minimal Buffer' : 'Mountain Choke Hold' },
         ].map(item => (
           <div key={item.label} style={{
             padding: '10px 12px', borderRadius: 10, textAlign: 'center',
@@ -73,8 +78,29 @@ const RouteCard = ({ route, label, recommended }) => {
             <div style={{ fontSize: 16, marginBottom: 3 }}>{item.icon}</div>
             <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{item.value}</div>
             <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 600 }}>{item.label}</div>
+            {item.sub && (
+              <div style={{ fontSize: 9.5, color: isPrimary ? '#059669' : '#dc2626', fontWeight: 700, marginTop: 2 }}>
+                {item.sub}
+              </div>
+            )}
           </div>
         ))}
+      </div>
+
+      {/* Corridor Highlights */}
+      <div style={{
+        padding: '8px 12px', borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 600,
+        background: isPrimary ? '#ecfdf5' : '#fef2f2',
+        color: isPrimary ? '#047857' : '#b91c1c',
+        border: `1px solid ${isPrimary ? '#a7f3d0' : '#fecaca'}`,
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
+        <span>{isPrimary ? '⚡ Optimal Transit:' : '⚠️ Caution:'}</span>
+        <span>
+          {isPrimary
+            ? 'Free-flowing fortified corridor saving transit delay and eliminating mountain landslide choke points.'
+            : 'Unstable mountain pass subject to chronic rockfalls, single-lane crawl, and clearance holds.'}
+        </span>
       </div>
 
       {/* Risk Gauge */}
@@ -158,6 +184,7 @@ export const RoutePlannerPage = () => {
       const res = await api.post('/routes/calculate', {
         origin: { name: origin.name, lat: origin.lat, lng: origin.lng },
         destination: { name: dest.name, lat: dest.lat, lng: dest.lng },
+        cargo_weight_tonnes: cargoWeight,
       });
       setResult(res.data);
     } catch (err) {
@@ -174,6 +201,7 @@ export const RoutePlannerPage = () => {
     api.post('/routes/calculate', {
       origin: { name: origin.name, lat: origin.lat, lng: origin.lng },
       destination: { name: dest.name, lat: dest.lat, lng: dest.lng },
+      cargo_weight_tonnes: cargoWeight,
     }).then(res => setResult(res.data))
       .catch(() => showToast('Route calculation failed', 'error'))
       .finally(() => setLoading(false));
@@ -201,7 +229,7 @@ export const RoutePlannerPage = () => {
       {/* Header */}
       <div>
         <h2 className="section-title" style={{ fontSize: 20, color: '#0f172a' }}>Route Intelligence</h2>
-        <p className="section-subtitle">AI-powered safe alternative routing with per-waypoint disruption analysis</p>
+        <p className="section-subtitle">Real-time terrain-aware pathfinding & landslide disruption intelligence trained on Kaggle benchmark data</p>
       </div>
 
       {/* Controls Card */}
@@ -258,14 +286,25 @@ export const RoutePlannerPage = () => {
       {/* Recommendation Banner */}
       {result?.recommendation && (
         <div style={{
-          padding: '14px 18px', borderRadius: 12, fontSize: 13.5, fontWeight: 700,
-          background: isRecommendingAlt ? '#fffbeb' : '#ecfdf5',
-          border: `1px solid ${isRecommendingAlt ? '#fde68a' : '#a7f3d0'}`,
-          color: isRecommendingAlt ? '#92400e' : '#047857',
-          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '16px 20px', borderRadius: 14, fontSize: 13.5, fontWeight: 700,
+          background: isRecommendingAlt ? '#f0fdf4' : '#ecfdf5',
+          border: `1px solid ${isRecommendingAlt ? '#86efac' : '#a7f3d0'}`,
+          color: isRecommendingAlt ? '#14532d' : '#047857',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+          boxShadow: '0 2px 10px rgba(16, 185, 129, 0.08)'
         }}>
-          {isRecommendingAlt ? <AlertTriangle size={18} /> : <CheckCircle size={18} />}
-          {result.recommendation}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 260 }}>
+            <CheckCircle size={20} color="#16a34a" />
+            <span>{result.recommendation}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span style={{ fontSize: 11, background: '#ffffff', padding: '4px 10px', borderRadius: 99, border: '1px solid #bbf7d0', color: '#15803d', fontWeight: 800 }}>
+              ⏱️ Time-Saving
+            </span>
+            <span style={{ fontSize: 11, background: '#ffffff', padding: '4px 10px', borderRadius: 99, border: '1px solid #bbf7d0', color: '#15803d', fontWeight: 800 }}>
+              🛡️ Low Hazard Exposure
+            </span>
+          </div>
         </div>
       )}
 

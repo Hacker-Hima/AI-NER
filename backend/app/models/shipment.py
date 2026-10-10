@@ -19,6 +19,7 @@ class ShipmentCreate(BaseModel):
     origin: LocationPoint
     destination: LocationPoint
     notes: Optional[str] = None
+    assigned_driver_id: Optional[str] = None
 
 class ShipmentResponse(BaseModel):
     id: str

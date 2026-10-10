@@ -53,6 +53,33 @@ def seed_database():
             "created_at": now
         },
         {
+            "full_name": "Rajesh Jamatia",
+            "email": "rajesh@ner.gov.in",
+            "hashed_password": get_hash("123"),
+            "role": "field_driver",
+            "phone": "+919862011224",
+            "region": "Assam",
+            "created_at": now
+        },
+        {
+            "full_name": "Tenzing Dorjee",
+            "email": "tenzing@ner.gov.in",
+            "hashed_password": get_hash("123"),
+            "role": "field_driver",
+            "phone": "+919436098711",
+            "region": "Arunachal Pradesh",
+            "created_at": now
+        },
+        {
+            "full_name": "Lalremruata Sailo",
+            "email": "sailo@ner.gov.in",
+            "hashed_password": get_hash("123"),
+            "role": "field_driver",
+            "phone": "+919863044122",
+            "region": "Mizoram",
+            "created_at": now
+        },
+        {
             "full_name": "Samuel Raj R",
             "email": "observer@ner.gov.in",
             "hashed_password": get_hash("123"),

@@ -9,6 +9,7 @@ class RouteCalculationRequest(BaseModel):
     origin: Coordinates
     destination: Coordinates
     avoid_hazards: bool = True
+    cargo_weight_tonnes: Optional[float] = 3.0
 
 class RouteSegmentRisk(BaseModel):
     segment_index: int
